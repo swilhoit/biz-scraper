@@ -1,0 +1,61 @@
+2025-07-05 10:47:03,302 - INFO - 🚀 STARTING FIXED BUSINESS SCRAPER (NO CATEGORIES/NAVIGATION)
+2025-07-05 10:47:03,302 - INFO - 🎯 Scraping BizQuest: https://www.bizquest.com/business-for-sale/page-1/
+2025-07-05 10:47:35,989 - INFO - BizQuest: Found 0 potential cards
+2025-07-05 10:47:35,989 - INFO - BizQuest: Extracted 0 valid listings
+2025-07-05 10:47:38,345 - INFO - 🎯 Scraping BizQuest: https://www.bizquest.com/business-for-sale/page-2/
+2025-07-05 10:47:54,375 - INFO - BizQuest: Found 65 potential cards
+2025-07-05 10:47:54,391 - INFO - BizQuest: Extracted 40 valid listings
+2025-07-05 10:47:57,306 - INFO - 🎯 Scraping BizQuest: https://www.bizquest.com/business-for-sale/page-3/
+2025-07-05 10:48:53,517 - WARNING - Attempt 1 failed for https://www.bizquest.com/business-for-sale/page-3/: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizquest.com%2Fbusiness-for-sale%2Fpage-3%2F&country_code=us
+2025-07-05 10:49:54,533 - WARNING - Attempt 2 failed for https://www.bizquest.com/business-for-sale/page-3/: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizquest.com%2Fbusiness-for-sale%2Fpage-3%2F&country_code=us
+2025-07-05 10:50:20,404 - INFO - BizQuest: Found 65 potential cards
+2025-07-05 10:50:20,418 - INFO - BizQuest: Extracted 32 valid listings
+2025-07-05 10:50:23,578 - INFO - 🎯 Scraping BizBuySell: https://www.bizbuysell.com/amazon-stores-for-sale/
+2025-07-05 10:51:20,672 - WARNING - Attempt 1 failed for https://www.bizbuysell.com/amazon-stores-for-sale/: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F&country_code=us
+2025-07-05 10:52:19,654 - WARNING - Attempt 2 failed for https://www.bizbuysell.com/amazon-stores-for-sale/: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F&country_code=us
+2025-07-05 10:53:20,972 - WARNING - Attempt 3 failed for https://www.bizbuysell.com/amazon-stores-for-sale/: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F&country_code=us
+2025-07-05 10:53:24,945 - INFO - 🎯 Scraping BizBuySell: https://www.bizbuysell.com/amazon-stores-for-sale/?page=2
+2025-07-05 10:54:21,790 - WARNING - Attempt 1 failed for https://www.bizbuysell.com/amazon-stores-for-sale/?page=2: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F%3Fpage%3D2&country_code=us
+2025-07-05 10:55:22,846 - WARNING - Attempt 2 failed for https://www.bizbuysell.com/amazon-stores-for-sale/?page=2: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F%3Fpage%3D2&country_code=us
+2025-07-05 10:56:21,566 - WARNING - Attempt 3 failed for https://www.bizbuysell.com/amazon-stores-for-sale/?page=2: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F%3Fpage%3D2&country_code=us
+2025-07-05 10:56:24,431 - INFO - 🎯 Scraping QuietLight: https://quietlight.com/amazon-fba-businesses-for-sale/
+2025-07-05 10:56:31,174 - INFO - QuietLight: Found 1182 listing cards
+2025-07-05 10:56:31,192 - INFO - QuietLight: Extracted 10 valid listings
+2025-07-05 10:56:34,180 - INFO - 🎯 Scraping QuietLight: https://quietlight.com/ecommerce-businesses-for-sale/
+2025-07-05 10:56:41,518 - INFO - QuietLight: Found 996 listing cards
+2025-07-05 10:56:41,533 - INFO - QuietLight: Extracted 14 valid listings
+2025-07-05 10:56:44,399 - INFO - 🎯 Scraping WebsiteProperties: https://websiteproperties.com/amazon-fba-business-for-sale/
+2025-07-05 10:56:54,513 - INFO - WebsiteProperties: Found 0 property cards
+2025-07-05 10:56:54,515 - INFO - WebsiteProperties: Extracted 0 valid listings
+2025-07-05 10:56:58,099 - INFO - 🎉 FIXED SCRAPER COMPLETED: 96 unique legitimate business listings
+2025-07-05 10:56:58,103 - INFO - 💾 Saved 96 listings to FIXED_LEGITIMATE_BUSINESS_LISTINGS.csv
+2025-07-05 11:09:41,085 - INFO - 🚀 STARTING FIXED BUSINESS SCRAPER (NO CATEGORIES/NAVIGATION)
+2025-07-05 11:09:41,086 - INFO - 🎯 Scraping BizQuest: https://www.bizquest.com/business-for-sale/page-1/
+2025-07-05 11:10:01,050 - INFO - BizQuest: Found 61 potential cards
+2025-07-05 11:10:01,067 - INFO - BizQuest: Extracted 34 valid listings
+2025-07-05 11:10:03,239 - INFO - 🎯 Scraping BizQuest: https://www.bizquest.com/business-for-sale/page-2/
+2025-07-05 11:10:16,940 - INFO - BizQuest: Found 0 potential cards
+2025-07-05 11:10:16,941 - INFO - BizQuest: Extracted 0 valid listings
+2025-07-05 11:10:19,161 - INFO - 🎯 Scraping BizQuest: https://www.bizquest.com/business-for-sale/page-3/
+2025-07-05 11:11:15,576 - WARNING - Attempt 1 failed for https://www.bizquest.com/business-for-sale/page-3/: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizquest.com%2Fbusiness-for-sale%2Fpage-3%2F&country_code=us
+2025-07-05 11:12:12,554 - INFO - BizQuest: Found 0 potential cards
+2025-07-05 11:12:12,554 - INFO - BizQuest: Extracted 0 valid listings
+2025-07-05 11:12:15,203 - INFO - 🎯 Scraping BizBuySell: https://www.bizbuysell.com/amazon-stores-for-sale/
+2025-07-05 11:13:11,915 - WARNING - Attempt 1 failed for https://www.bizbuysell.com/amazon-stores-for-sale/: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F&country_code=us
+2025-07-05 11:14:13,352 - WARNING - Attempt 2 failed for https://www.bizbuysell.com/amazon-stores-for-sale/: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F&country_code=us
+2025-07-05 11:15:15,040 - WARNING - Attempt 3 failed for https://www.bizbuysell.com/amazon-stores-for-sale/: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F&country_code=us
+2025-07-05 11:15:18,769 - INFO - 🎯 Scraping BizBuySell: https://www.bizbuysell.com/amazon-stores-for-sale/?page=2
+2025-07-05 11:16:15,246 - WARNING - Attempt 1 failed for https://www.bizbuysell.com/amazon-stores-for-sale/?page=2: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F%3Fpage%3D2&country_code=us
+2025-07-05 11:17:16,226 - WARNING - Attempt 2 failed for https://www.bizbuysell.com/amazon-stores-for-sale/?page=2: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F%3Fpage%3D2&country_code=us
+2025-07-05 11:18:16,643 - WARNING - Attempt 3 failed for https://www.bizbuysell.com/amazon-stores-for-sale/?page=2: 500 Server Error: Internal Server Error for url: http://api.scraperapi.com/?api_key=054d8cdaa4e8453e3afa7e5e9316c72f&url=https%3A%2F%2Fwww.bizbuysell.com%2Famazon-stores-for-sale%2F%3Fpage%3D2&country_code=us
+2025-07-05 11:18:18,792 - INFO - 🎯 Scraping QuietLight: https://quietlight.com/amazon-fba-businesses-for-sale/
+2025-07-05 11:18:23,992 - INFO - QuietLight: Found 1182 listing cards
+2025-07-05 11:18:24,011 - INFO - QuietLight: Extracted 10 valid listings
+2025-07-05 11:18:26,956 - INFO - 🎯 Scraping QuietLight: https://quietlight.com/ecommerce-businesses-for-sale/
+2025-07-05 11:18:32,453 - INFO - QuietLight: Found 996 listing cards
+2025-07-05 11:18:32,467 - INFO - QuietLight: Extracted 14 valid listings
+2025-07-05 11:18:35,984 - INFO - 🎯 Scraping WebsiteProperties: https://websiteproperties.com/amazon-fba-business-for-sale/
+2025-07-05 11:18:47,821 - INFO - WebsiteProperties: Found 0 property cards
+2025-07-05 11:18:47,822 - INFO - WebsiteProperties: Extracted 0 valid listings
+2025-07-05 11:18:50,351 - INFO - 🎉 FIXED SCRAPER COMPLETED: 58 unique legitimate business listings
+2025-07-05 11:18:50,354 - INFO - 💾 Saved 58 listings to FIXED_LEGITIMATE_BUSINESS_LISTINGS.csv

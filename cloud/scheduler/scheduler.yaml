@@ -1,0 +1,22 @@
+# Cloud Scheduler Configuration
+
+jobs:
+  - name: daily-business-scraper
+    schedule: "0 9 * * *"  # Run daily at 9 AM UTC
+    time_zone: "UTC"
+    description: "Trigger daily business listing scraper"
+    http_target:
+      uri: https://REGION-PROJECT_ID.cloudfunctions.net/orchestrator
+      http_method: POST
+      headers:
+        Content-Type: "application/json"
+        X-CloudScheduler: "true"
+      body: |
+        {
+          "trigger": "scheduled",
+          "schedule": "daily"
+        }
+    retry_config:
+      retry_count: 3
+      min_backoff_duration: "60s"
+      max_backoff_duration: "600s"

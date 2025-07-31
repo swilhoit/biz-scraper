@@ -12,6 +12,10 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -26,7 +30,9 @@ logger = logging.getLogger(__name__)
 
 class FixedBusinessScraper:
     def __init__(self):
-        self.api_key = "054d8cdaa4e8453e3afa7e5e9316c72f"
+        self.api_key = os.getenv('SCRAPER_API_KEY')
+        if not self.api_key:
+            raise ValueError("SCRAPER_API_KEY not found in .env file")
         self.base_api_url = "http://api.scraperapi.com"
         self.scraped_urls: Set[str] = set()
         

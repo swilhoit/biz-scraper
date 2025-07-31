@@ -39,7 +39,16 @@
       "Bash(gcloud functions call:*)",
       "Bash(git init:*)",
       "Bash(git remote add:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh repo view:*)",
+      "Bash(git config:*)",
+      "Bash(gh repo delete:*)",
+      "Bash(gh repo sync:*)",
+      "Bash(git checkout:*)",
+      "Bash(git count-objects:*)",
+      "Bash(git rm:*)"
     ],
     "deny": []
   }

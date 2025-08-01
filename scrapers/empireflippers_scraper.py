@@ -6,44 +6,40 @@ import json
 class EmpireFlippersScraper(BaseScraper):
     """Scraper for EmpireFlippers - JavaScript-heavy site with high-value listings"""
     
-    def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
+    def get_listing_urls(self, search_url: str, max_pages: Optional[int] = None) -> List[str]:
         """Get listing URLs from marketplace"""
         listing_urls = []
-        
-        search_urls = [self.site_config.get('search_url')]
-        
-        for base_url in filter(None, search_urls):
-            page = 1
-            while True:
-                if max_pages and page > max_pages:
-                    break
+        page = 1
+        while True:
+            if max_pages and page > max_pages:
+                break
+            
+            url = f"{search_url}?page={page}" if '?' not in search_url else f"{search_url}&page={page}"
+            
+            soup = self.get_page(url)
+            if not soup:
+                break
+            
+            listings = soup.select('div.listing-item a')
+            
+            if not listings:
+                self.logger.warning(f"No listings found on page {page}")
+                break
+            
+            for listing in listings:
+                href = listing.get('href')
+                if href:
+                    if href.startswith('/'):
+                        href = self.base_url + href
+                    if href not in listing_urls and '/listing/' in href:
+                        listing_urls.append(href)
+            
+            self.logger.info(f"Found {len(listing_urls)} total listings after page {page}")
+            
+            if not soup.select('a.next-page-link'):
+                break
                 
-                url = f"{base_url}?page={page}" if '?' not in base_url else f"{base_url}&page={page}"
-                
-                soup = self.get_page(url)
-                if not soup:
-                    break
-                
-                listings = soup.select('div.listing-item a')
-                
-                if not listings:
-                    self.logger.warning(f"No listings found on page {page}")
-                    break
-                
-                for listing in listings:
-                    href = listing.get('href')
-                    if href:
-                        if href.startswith('/'):
-                            href = self.base_url + href
-                        if href not in listing_urls and '/listing/' in href:
-                            listing_urls.append(href)
-                
-                self.logger.info(f"Found {len(listing_urls)} total listings after page {page}")
-                
-                if not soup.select('a.next-page-link'):
-                    break
-                    
-                page += 1
+            page += 1
         
         return list(set(listing_urls))
     

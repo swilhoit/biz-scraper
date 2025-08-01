@@ -5,33 +5,30 @@ import re
 class WebsitePropertiesScraper(BaseScraper):
     """Scraper for WebsiteProperties.com, specializing in high-value digital assets."""
     
-    def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
+    def get_listing_urls(self, search_url: str, max_pages: Optional[int] = None) -> List[str]:
         """Get listing URLs from the main listings page."""
         listing_urls = []
-        search_urls = self.site_config.get('search_urls', [self.site_config.get('search_url')])
-
-        for search_url in filter(None, search_urls):
-            page = 1
-            while not max_pages or page <= max_pages:
-                url = f"{search_url}/page/{page}/" if page > 1 else search_url
-                soup = self.get_page(url)
-                if not soup:
-                    break
+        page = 1
+        while not max_pages or page <= max_pages:
+            url = f"{search_url}/page/{page}/" if page > 1 else search_url
+            soup = self.get_page(url)
+            if not soup:
+                break
+            
+            listings = soup.select('article.listing-card h3.mb-2 a')
+            if not listings:
+                self.logger.info(f"No listings found on {url}")
+                break
                 
-                listings = soup.select('article.listing-card h3.mb-2 a')
-                if not listings:
-                    self.logger.info(f"No listings found on {url}")
-                    break
-                    
-                for link in listings:
-                    href = link.get('href')
-                    if href and href not in listing_urls:
-                        listing_urls.append(href)
-                
-                self.logger.info(f"Found {len(listings)} listings on page {page}")
-                if not soup.select_one('a.next.page-numbers'):
-                    break
-                page += 1
+            for link in listings:
+                href = link.get('href')
+                if href and href not in listing_urls:
+                    listing_urls.append(href)
+            
+            self.logger.info(f"Found {len(listings)} listings on page {page}")
+            if not soup.select_one('a.next.page-numbers'):
+                break
+            page += 1
             
         return listing_urls
     

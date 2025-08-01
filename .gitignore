@@ -35,6 +35,11 @@ Thumbs.db
 test_*.py
 debug_*.py
 *.html
+test_files/
+
+# Temporary files
+temp/
+temp_*.py
 
 # Backup files
 *.bak

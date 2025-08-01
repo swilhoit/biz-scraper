@@ -7,29 +7,44 @@ import re
 from .base_scraper import BaseScraper
 
 class WebsiteClosersScraper(BaseScraper):
-    def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
-        """Get listing URLs from WebsiteClosers"""
+    def get_listing_urls(self, search_url: str, max_pages: Optional[int] = None) -> List[str]:
+        """Get listing URLs from all pages on WebsiteClosers."""
         listing_urls = []
+        page = 1
         
-        search_url = self.site_config.get('search_url')
         if not search_url:
             self.logger.error("No search URL configured for WebsiteClosers")
             return listing_urls
 
-        self.logger.info(f"Scraping WebsiteClosers listings from {search_url}")
-        
-        soup = self.get_page(search_url)
-        if not soup:
-            return listing_urls
-        
-        links = soup.select('div.post_item a.post_title')
-        for link in links:
-            href = link.get('href')
-            if href:
-                full_url = href if href.startswith('http') else f"{self.base_url}{href}"
-                if full_url not in listing_urls:
-                    listing_urls.append(full_url)
-        
+        while True:
+            if max_pages and page > max_pages:
+                self.logger.info(f"Reached max pages limit: {max_pages}")
+                break
+
+            url = f"{search_url}page/{page}/" if page > 1 else search_url
+            self.logger.info(f"Scraping WebsiteClosers listings from {url}")
+            
+            soup = self.get_page(url)
+            if not soup:
+                self.logger.info(f"No content for {url}, stopping.")
+                break
+            
+            initial_count = len(listing_urls)
+            links = soup.select('div.post_item a.post_title')
+            
+            for link in links:
+                href = link.get('href')
+                if href:
+                    full_url = href if href.startswith('http') else f"{self.base_url}{href}"
+                    if full_url not in listing_urls:
+                        listing_urls.append(full_url)
+            
+            if len(listing_urls) == initial_count:
+                self.logger.info(f"No new listings found on page {page}, stopping.")
+                break
+
+            page += 1
+            
         return listing_urls
     
     def scrape_listing(self, url: str) -> Optional[Dict]:

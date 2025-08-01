@@ -3,44 +3,59 @@ from typing import Dict, List, Optional
 import json
 
 class BizBuySellScraper(BaseScraper):
-    def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
-        """Get listing URLs from the first search page"""
+    def get_listing_urls(self, search_url: str, max_pages: Optional[int] = None) -> List[str]:
+        """Get listing URLs from all pages for a given search URL."""
         listing_urls = []
-        url = f"{self.site_config['search_url']}1/"
-        soup = self.get_page(url)
+        page = 1
         
-        if not soup:
-            self.logger.info(f"No content found for {url}, stopping.")
-            return listing_urls
+        while True:
+            if max_pages and page > max_pages:
+                self.logger.info(f"Reached max pages limit: {max_pages}")
+                break
 
-        # Prioritize JSON-LD data
-        json_ld_script = soup.find('script', {'type': 'application/ld+json'})
-        if json_ld_script:
-            try:
-                data = json.loads(json_ld_script.string)
-                if 'about' in data:
-                    for item in data['about']:
-                        if 'item' in item and 'url' in item['item']:
-                            listing_url = item['item']['url']
-                            if listing_url not in listing_urls:
-                                listing_urls.append(listing_url)
-            except (json.JSONDecodeError, KeyError) as e:
-                self.logger.error(f"Error parsing JSON-LD: {e}")
-
-        # Fallback to HTML selectors if JSON-LD fails or is incomplete
-        if not listing_urls:
-            listings = soup.select('div.search-result-card a')
-            if not listings:
-                self.logger.warning(f"No listings found on {url}")
+            url = f"{search_url}{page}/"
+            soup = self.get_page(url)
             
-            for listing in listings:
-                href = listing.get('href')
-                if href:
-                    if href.startswith('/'):
-                        href = self.base_url + href
-                    if href not in listing_urls:
-                        listing_urls.append(href)
-        
+            if not soup:
+                self.logger.info(f"No content found for {url}, stopping pagination.")
+                break
+
+            initial_listing_count = len(listing_urls)
+
+            # Prioritize JSON-LD data
+            json_ld_script = soup.find('script', {'type': 'application/ld+json'})
+            if json_ld_script:
+                try:
+                    data = json.loads(json_ld_script.string)
+                    if 'about' in data:
+                        for item in data['about']:
+                            if 'item' in item and 'url' in item['item']:
+                                listing_url = item['item']['url']
+                                if listing_url not in listing_urls:
+                                    listing_urls.append(listing_url)
+                except (json.JSONDecodeError, KeyError) as e:
+                    self.logger.error(f"Error parsing JSON-LD on page {page}: {e}")
+
+            # Fallback to HTML selectors if JSON-LD fails or is incomplete
+            if len(listing_urls) == initial_listing_count:
+                listings = soup.select('div.search-result-card a')
+                if listings:
+                    for listing in listings:
+                        href = listing.get('href')
+                        if href:
+                            if href.startswith('/'):
+                                href = self.base_url + href
+                            if href not in listing_urls:
+                                listing_urls.append(href)
+            
+            # If we didn't find any new listings on this page, stop.
+            if len(listing_urls) == initial_listing_count:
+                self.logger.info(f"No new listings found on page {page}. Stopping pagination.")
+                break
+            
+            self.logger.info(f"Found {len(listing_urls) - initial_listing_count} new listings on page {page}")
+            page += 1
+            
         return listing_urls
     
     def scrape_listing(self, url: str) -> Optional[Dict]:

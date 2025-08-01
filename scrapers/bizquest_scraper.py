@@ -7,7 +7,7 @@ class BizQuestScraper(BaseScraper):
         super().__init__(site_config, max_workers)
         self.js_rendering = True # Enable JS rendering for this scraper
 
-    def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
+    def get_listing_urls(self, search_url: str, max_pages: Optional[int] = None) -> List[str]:
         """Get listing URLs from search pages"""
         listing_urls = []
         page = 1
@@ -17,7 +17,7 @@ class BizQuestScraper(BaseScraper):
                 break
             
             # BizQuest uses a 'page' query parameter
-            url = f"{self.site_config['search_url']}?page={page}"
+            url = f"{search_url}?page={page}"
             soup = self.get_page(url, render=self.js_rendering)
             
             if not soup:

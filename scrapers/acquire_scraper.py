@@ -5,29 +5,10 @@ from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
 class AcquireScraper(BaseScraper):
-    def get_page(self, url: str):
-        """Override to use Playwright for JS-heavy page"""
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page()
-            try:
-                page.goto(url, wait_until='domcontentloaded', timeout=60000)
-                page.wait_for_timeout(5000)
-                content = page.content()
-                if not content:
-                    return None
-                return BeautifulSoup(content, 'lxml')
-            except Exception as e:
-                self.logger.error(f"Error fetching {url} with Playwright: {e}")
-                return None
-            finally:
-                browser.close()
-
-    def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
+    def get_listing_urls(self, search_url: str, max_pages: Optional[int] = None) -> List[str]:
         """Get listing URLs from the main listings page by parsing embedded JSON."""
         listing_urls = []
         
-        search_url = self.site_config.get('search_url')
         if not search_url:
             self.logger.error("No search URL configured for Acquire.com")
             return listing_urls

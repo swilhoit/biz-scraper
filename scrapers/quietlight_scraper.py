@@ -5,37 +5,34 @@ import re
 class QuietLightScraper(BaseScraper):
     """Scraper for QuietLight - known for high-value online businesses."""
     
-    def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
+    def get_listing_urls(self, search_url: str, max_pages: Optional[int] = None) -> List[str]:
         """Get listing URLs from search pages."""
         listing_urls = []
-        search_urls = self.site_config.get('search_urls', [self.site_config.get('search_url')])
-        
-        for base_url in filter(None, search_urls):
-            page = 1
-            while not max_pages or page <= max_pages:
-                url = f"{base_url.rstrip('/')}/page/{page}/" if page > 1 else base_url
-                soup = self.get_page(url)
-                if not soup:
-                    break
-                
-                listings = soup.select('div.listing-card a.listing-card__link')
-                if not listings:
-                    self.logger.info(f"No listings found on {url}")
-                    break
-                
-                found_on_page = 0
-                for link in listings:
-                    href = link.get('href')
-                    if href and '/listings/' in href:
-                        full_url = self.base_url + href if href.startswith('/') else href
-                        if full_url not in listing_urls:
-                            listing_urls.append(full_url)
-                            found_on_page += 1
-                
-                self.logger.info(f"Found {found_on_page} new listings on page {page}")
-                if not soup.select_one('a.next'):
-                    break
-                page += 1
+        page = 1
+        while not max_pages or page <= max_pages:
+            url = f"{search_url.rstrip('/')}/page/{page}/" if page > 1 else search_url
+            soup = self.get_page(url)
+            if not soup:
+                break
+            
+            listings = soup.select('div.listing-card a.listing-card__link')
+            if not listings:
+                self.logger.info(f"No listings found on {url}")
+                break
+            
+            found_on_page = 0
+            for link in listings:
+                href = link.get('href')
+                if href and '/listings/' in href:
+                    full_url = self.base_url + href if href.startswith('/') else href
+                    if full_url not in listing_urls:
+                        listing_urls.append(full_url)
+                        found_on_page += 1
+            
+            self.logger.info(f"Found {found_on_page} new listings on page {page}")
+            if not soup.select_one('a.next'):
+                break
+            page += 1
         return listing_urls
 
     def scrape_listing(self, url: str) -> Optional[Dict]:

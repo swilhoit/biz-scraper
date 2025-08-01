@@ -43,6 +43,26 @@ class BigQueryHandler:
             bigquery.SchemaField("updated_at", "TIMESTAMP"),
             bigquery.SchemaField("enhanced_at", "TIMESTAMP"),
         ]
+    
+    def _get_logs_schema(self):
+        """Defines the schema for the scraping logs table."""
+        return [
+            bigquery.SchemaField("run_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("site_name", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("start_time", "TIMESTAMP", mode="REQUIRED"),
+            bigquery.SchemaField("end_time", "TIMESTAMP"),
+            bigquery.SchemaField("duration_seconds", "FLOAT"),
+            bigquery.SchemaField("total_listings_found", "INTEGER"),
+            bigquery.SchemaField("existing_listings", "INTEGER"),
+            bigquery.SchemaField("new_listings", "INTEGER"),
+            bigquery.SchemaField("successful_scrapes", "INTEGER"),
+            bigquery.SchemaField("failed_scrapes", "INTEGER"),
+            bigquery.SchemaField("error_count", "INTEGER"),
+            bigquery.SchemaField("status", "STRING"),  # 'running', 'completed', 'failed'
+            bigquery.SchemaField("error_message", "STRING"),
+            bigquery.SchemaField("api_calls_made", "INTEGER"),
+            bigquery.SchemaField("api_credits_saved", "INTEGER"),
+        ]
 
     def _create_dataset_if_not_exists(self):
         """Creates the BigQuery dataset if it doesn't already exist."""
@@ -137,6 +157,65 @@ class BigQueryHandler:
         
         self.logger.info(f"Found {len(existing_urls)} existing URLs out of {len(urls)} checked")
         return existing_urls
+    
+    def create_logs_table_if_not_exists(self):
+        """Creates the scraping logs table if it doesn't already exist."""
+        table_name = "scraping_logs"
+        table_id = f"{self.dataset_id}.{table_name}"
+        
+        try:
+            self.client.get_table(table_id)
+            self.logger.info(f"Table {table_id} already exists.")
+        except NotFound:
+            self.logger.info(f"Table {table_id} not found, creating it.")
+            schema = self._get_logs_schema()
+            table = bigquery.Table(table_id, schema=schema)
+            self.client.create_table(table, timeout=30)
+            self.logger.info(f"Successfully created table {table_id}.")
+        return table_id
+    
+    def log_scraping_run(self, log_data: dict):
+        """Log a scraping run to the scraping_logs table."""
+        table_name = "scraping_logs"
+        table_id = f"{self.dataset_id}.{table_name}"
+        
+        # Ensure the logs table exists
+        self.create_logs_table_if_not_exists()
+        
+        # Insert the log record
+        errors = self.client.insert_rows_json(table_id, [log_data])
+        if not errors:
+            self.logger.info(f"Successfully logged scraping run {log_data.get('run_id')} to {table_id}.")
+        else:
+            self.logger.error(f"Error logging scraping run: {errors}")
+    
+    def update_scraping_log(self, run_id: str, updates: dict):
+        """Update an existing scraping log entry."""
+        table_name = "scraping_logs"
+        table_id = f"{self.dataset_id}.{table_name}"
+        
+        # Build the update query
+        set_clauses = []
+        for key, value in updates.items():
+            if isinstance(value, str):
+                set_clauses.append(f"{key} = '{value}'")
+            elif value is None:
+                set_clauses.append(f"{key} = NULL")
+            else:
+                set_clauses.append(f"{key} = {value}")
+        
+        query = f"""
+        UPDATE `{table_id}`
+        SET {', '.join(set_clauses)}
+        WHERE run_id = '{run_id}'
+        """
+        
+        try:
+            query_job = self.client.query(query)
+            query_job.result()
+            self.logger.info(f"Successfully updated scraping log for run_id: {run_id}")
+        except Exception as e:
+            self.logger.error(f"Error updating scraping log: {e}")
 
 # Example of how to get the handler
 _handler = None

@@ -17,16 +17,26 @@ class WebsitePropertiesScraper(BaseScraper):
             
             listings = soup.select('article.listing-card h3.mb-2 a')
             if not listings:
-                self.logger.info(f"No listings found on {url}")
+                self.logger.info(f"No listings found on {url}, stopping pagination.")
                 break
-                
+            
+            new_listings_found = False
             for link in listings:
                 href = link.get('href')
                 if href and href not in listing_urls:
                     listing_urls.append(href)
+                    new_listings_found = True
             
+            # If we are on a page and didn't find any *new* listings, we can stop.
+            if not new_listings_found and page > 1:
+                self.logger.info(f"No new listings found on page {page}. Ending scrape for this URL.")
+                break
+
             self.logger.info(f"Found {len(listings)} listings on page {page}")
+            
+            # Also check for a next page link, if it's gone, we are done.
             if not soup.select_one('a.next.page-numbers'):
+                self.logger.info("No 'next page' button found. Ending scrape for this URL.")
                 break
             page += 1
             

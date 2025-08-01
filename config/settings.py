@@ -31,7 +31,6 @@ SITES = [
     {
         'name': 'BizBuySell',
         'base_url': 'https://www.bizbuysell.com',
-        'search_url': 'https://www.bizbuysell.com/businesses-for-sale/',
         'amazon_url': 'https://www.bizbuysell.com/amazon-stores-for-sale/',
         'enabled': True
     },

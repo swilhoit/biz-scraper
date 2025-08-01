@@ -61,7 +61,12 @@
       "Bash(mv:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(bq show:*)"
+      "Bash(bq show:*)",
+      "Bash(./deploy.sh:*)",
+      "Bash(gcloud secrets add-iam-policy-binding:*)",
+      "Bash(gcloud run deploy:*)",
+      "Bash(gcloud builds submit:*)",
+      "Bash(gcloud run services describe:*)"
     ],
     "deny": []
   }

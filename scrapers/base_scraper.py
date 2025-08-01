@@ -110,53 +110,67 @@ class BaseScraper(ABC):
         """Scrape a single listing"""
         pass
 
-    def _scrape_listing_data(self, url: str) -> Optional[Dict]:
-        """Helper function to scrape a single listing and add metadata."""
+    def _scrape_and_save(self, url: str):
+        """Scrapes a single listing and saves it to BigQuery immediately."""
         self.logger.info(f"Scraping: {url}")
         try:
             listing_data = self.scrape_listing(url)
             if listing_data:
                 # Add unique ID, scraped_at timestamp, and perform any enhancements
-                listing_data['id'] = abs(hash(listing_data.get('listing_url', '')))
+                listing_data['id'] = abs(hash(listing_data.get('listing_url', url)))
                 listing_data['scraped_at'] = datetime.utcnow().isoformat()
                 listing_data = AmazonFBADetector.enhance_listing(listing_data)
-                return listing_data
+                
+                # Save the single record
+                self.save_to_bigquery([listing_data])
+                return True # Indicate success
         except Exception as e:
-            self.logger.error(f"Error scraping {url}: {e}", exc_info=True)
-        return None
+            self.logger.error(f"Error scraping and saving {url}: {e}", exc_info=True)
+        return False # Indicate failure
 
     def run(self, max_listings: Optional[int] = None):
         """Run the scraper"""
         self.logger.info(f"Starting {self.name} scraper for historical data.")
         
         try:
-            # For historical scraping, we don't limit pages unless max_listings is for testing
-            pages_to_scrape = 1 if max_listings else None # None means scrape all pages
+            pages_to_scrape = 1 if max_listings else None
             
             listing_urls = self._get_all_listing_urls(max_pages=pages_to_scrape)
             self.logger.info(f"Found {len(listing_urls)} total listings for {self.name} across all search URLs.")
             
             if max_listings:
                 listing_urls = listing_urls[:max_listings]
+            
+            # Check for existing URLs in BigQuery to avoid duplicate API calls
+            self.logger.info(f"Checking for existing URLs in BigQuery...")
+            existing_urls = self.bq_handler.get_existing_urls(self.name, listing_urls)
+            
+            # Filter out existing URLs
+            new_urls = [url for url in listing_urls if url not in existing_urls]
+            
+            if existing_urls:
+                self.logger.info(f"Skipping {len(existing_urls)} already scraped URLs to conserve API credits.")
+            
+            self.logger.info(f"Will scrape {len(new_urls)} new listings out of {len(listing_urls)} total found.")
+            
+            if not new_urls:
+                self.logger.info("No new listings to scrape. All URLs already exist in the database.")
+                return
 
-            all_scraped_data = []
+            successful_scrapes = 0
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                future_to_url = {executor.submit(self._scrape_listing_data, url): url for url in listing_urls}
+                future_to_url = {executor.submit(self._scrape_and_save, url): url for url in new_urls}
                 
                 for future in concurrent.futures.as_completed(future_to_url):
                     try:
-                        result = future.result()
-                        if result:
-                            all_scraped_data.append(result)
+                        if future.result():
+                            successful_scrapes += 1
                     except Exception as e:
                         url = future_to_url[future]
                         self.logger.error(f"An exception occurred for {url}: {e}", exc_info=True)
             
-            self.logger.info(f"Scraped {len(all_scraped_data)}/{len(listing_urls)} listings.")
-
-            # Save all data to BigQuery in one batch
-            if all_scraped_data:
-                self.save_to_bigquery(all_scraped_data)
+            self.logger.info(f"Successfully scraped and saved {successful_scrapes}/{len(new_urls)} new listings.")
+            self.logger.info(f"Total in database: {len(existing_urls) + successful_scrapes} listings for {self.name}.")
 
         except Exception as e:
             self.logger.critical(f"A critical error occurred in {self.name} scraper: {e}", exc_info=True)

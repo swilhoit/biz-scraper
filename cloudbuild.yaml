@@ -1,0 +1,49 @@
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/biz-scraper:$COMMIT_SHA', '.']
+  
+  # Push the Docker image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/biz-scraper:$COMMIT_SHA']
+  
+  # Tag the image as latest
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['tag', 'gcr.io/$PROJECT_ID/biz-scraper:$COMMIT_SHA', 'gcr.io/$PROJECT_ID/biz-scraper:latest']
+  
+  # Push the latest tag
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/biz-scraper:latest']
+  
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'biz-scraper'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/biz-scraper:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '4Gi'
+      - '--cpu'
+      - '2'
+      - '--timeout'
+      - '3600'
+      - '--set-env-vars'
+      - 'GCP_PROJECT_ID=$PROJECT_ID,BQ_DATASET_NAME=business_listings'
+      - '--set-secrets'
+      - 'SCRAPER_API_KEY=scraper-api-key:latest'
+
+# Store images in Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/biz-scraper:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/biz-scraper:latest'
+
+# Build timeout
+timeout: '1200s'

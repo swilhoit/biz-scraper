@@ -1,0 +1,40 @@
+runtime: python311
+
+# App Engine Flexible environment for long-running scrapers
+env: flex
+
+# Resources configuration
+resources:
+  cpu: 2
+  memory_gb: 4
+  disk_size_gb: 10
+
+# Environment variables
+env_variables:
+  # These will be set from Secret Manager or during deployment
+  SCRAPER_API_KEY: "YOUR_SCRAPER_API_KEY"
+  GCP_PROJECT_ID: "YOUR_PROJECT_ID"
+  BQ_DATASET_NAME: "business_listings"
+
+# Automatic scaling configuration
+automatic_scaling:
+  min_num_instances: 1
+  max_num_instances: 10
+  cool_down_period_sec: 180
+  cpu_utilization:
+    target_utilization: 0.6
+
+# Health check configuration
+liveness_check:
+  path: "/health"
+  check_interval_sec: 30
+  timeout_sec: 10
+  failure_threshold: 3
+  success_threshold: 1
+
+readiness_check:
+  path: "/ready"
+  check_interval_sec: 10
+  timeout_sec: 10
+  failure_threshold: 3
+  success_threshold: 1

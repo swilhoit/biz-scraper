@@ -88,6 +88,55 @@ class BigQueryHandler:
             self.logger.info(f"Successfully inserted {len(rows)} rows into {table_id}.")
         else:
             self.logger.error(f"Encountered errors while inserting rows into {table_id}: {errors}")
+    
+    def get_existing_urls(self, site_name: str, urls: list) -> set:
+        """Check which URLs already exist in the database to avoid duplicate scraping."""
+        if not urls:
+            return set()
+        
+        table_name = f"businesses_{site_name.lower()}"
+        table_id = f"{self.dataset_id}.{table_name}"
+        
+        # Check if table exists first
+        try:
+            self.client.get_table(table_id)
+        except NotFound:
+            # Table doesn't exist, so no URLs exist
+            return set()
+        
+        # Build query to check for existing URLs
+        # Process URLs in batches to avoid query length limits
+        existing_urls = set()
+        batch_size = 500
+        
+        for i in range(0, len(urls), batch_size):
+            batch = urls[i:i + batch_size]
+            
+            # Create a parameterized query for safety
+            query = f"""
+            SELECT DISTINCT listing_url
+            FROM `{table_id}`
+            WHERE listing_url IN UNNEST(@urls)
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ArrayQueryParameter("urls", "STRING", batch)
+                ]
+            )
+            
+            try:
+                query_job = self.client.query(query, job_config=job_config)
+                results = query_job.result()
+                
+                for row in results:
+                    existing_urls.add(row.listing_url)
+                    
+            except Exception as e:
+                self.logger.error(f"Error checking existing URLs: {e}")
+        
+        self.logger.info(f"Found {len(existing_urls)} existing URLs out of {len(urls)} checked")
+        return existing_urls
 
 # Example of how to get the handler
 _handler = None

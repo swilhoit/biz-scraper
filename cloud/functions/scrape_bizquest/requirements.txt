@@ -1,4 +1,0 @@
-functions-framework==3.*
-google-cloud-bigquery==3.34.*
-requests==2.31.*
-beautifulsoup4==4.12.*

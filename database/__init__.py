@@ -1,3 +1,3 @@
-from .schema import Business, get_session, init_database
+from .schema import get_session, init_database, get_table_class
 
-__all__ = ['Business', 'get_session', 'init_database']
+__all__ = ['get_session', 'init_database', 'get_table_class']

@@ -58,7 +58,9 @@
       "Bash(tree:*)",
       "Bash(touch:*)",
       "Bash(true)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   }

@@ -1,172 +1,99 @@
-"""
-Acquire.com Scraper
-Scrapes business listings from Acquire marketplace
-"""
-from typing import Dict, List, Optional
-import re
 from .base_scraper import BaseScraper
+from typing import Dict, List, Optional
+import json
+from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
 
 class AcquireScraper(BaseScraper):
+    def get_page(self, url: str):
+        """Override to use Playwright for JS-heavy page"""
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            try:
+                page.goto(url, wait_until='domcontentloaded', timeout=60000)
+                page.wait_for_timeout(5000)
+                content = page.content()
+                if not content:
+                    return None
+                return BeautifulSoup(content, 'lxml')
+            except Exception as e:
+                self.logger.error(f"Error fetching {url} with Playwright: {e}")
+                return None
+            finally:
+                browser.close()
+
     def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
-        """Get listing URLs from Acquire.com"""
+        """Get listing URLs from the main listings page by parsing embedded JSON."""
         listing_urls = []
         
-        # Acquire uses different category pages
-        categories = [
-            'amazon-fba-for-sale',
-            'ecommerce-for-sale',
-            'saas-for-sale',
-            'marketplace-for-sale'
-        ]
-        
-        for category in categories:
-            self.logger.info(f"Scraping Acquire.com category: {category}")
+        search_url = self.site_config.get('search_url')
+        if not search_url:
+            self.logger.error("No search URL configured for Acquire.com")
+            return listing_urls
             
-            # Acquire uses React, so we might get limited results from static scraping
-            page_url = f"{self.base_url}/{category}/"
-            soup = self.get_page(page_url)
+        soup = self.get_page(search_url)
+        if not soup:
+            return listing_urls
+
+        next_data_script = soup.find('script', {'id': '__NEXT_DATA__'})
+        if not next_data_script:
+            self.logger.error("Could not find __NEXT_DATA__ script tag on the page.")
+            return listing_urls
             
-            if not soup:
-                continue
+        try:
+            data = json.loads(next_data_script.string)
+            listings = data.get('props', {}).get('pageProps', {}).get('listings', [])
             
-            # Look for listing links - Acquire's structure varies
-            # Try multiple selectors
-            selectors = [
-                'a[href*="/startup/"]',
-                'a[href*="/business/"]',
-                'div.listing-card a',
-                'article a[href]'
-            ]
+            for listing in listings:
+                slug = listing.get('slug')
+                if slug:
+                    listing_urls.append(f"{self.site_config['base_url']}/app/listing/{slug}")
+
+        except (json.JSONDecodeError, KeyError) as e:
+            self.logger.error(f"Error parsing __NEXT_DATA__ JSON: {e}")
             
-            for selector in selectors:
-                links = soup.select(selector)
-                if links:
-                    for link in links:
-                        href = link.get('href', '')
-                        if href and ('/startup/' in href or '/business/' in href):
-                            full_url = href if href.startswith('http') else f"https://app.acquire.com{href}"
-                            if full_url not in listing_urls:
-                                listing_urls.append(full_url)
-                    break
-            
-            # Also try to find links in JavaScript content
-            scripts = soup.find_all('script')
-            for script in scripts:
-                if script.string:
-                    # Look for URLs in JSON data
-                    urls = re.findall(r'"url"\s*:\s*"([^"]+/(?:startup|business)/[^"]+)"', script.string)
-                    for url in urls:
-                        full_url = url if url.startswith('http') else f"https://app.acquire.com{url}"
-                        if full_url not in listing_urls:
-                            listing_urls.append(full_url)
-            
-            if max_pages and len(listing_urls) >= max_pages * 20:
-                break
-        
-        return listing_urls[:max_pages * 20] if max_pages else listing_urls
-    
+        return listing_urls
+
     def scrape_listing(self, url: str) -> Optional[Dict]:
-        """Scrape a single Acquire.com listing"""
+        """Scrape a single listing page by parsing embedded JSON."""
         soup = self.get_page(url)
         if not soup:
             return None
-        
-        listing_data = {
-            'listing_url': url,
-            'source_site': self.name
-        }
-        
-        # Title - Acquire often puts titles in h1 or h2
-        title_elem = soup.find('h1') or soup.find('h2')
-        if title_elem:
-            listing_data['title'] = title_elem.get_text().strip()
-        
-        # Price - look for various price patterns
-        price_patterns = [
-            r'asking\s*price[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)',
-            r'price[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)',
-            r'\$?([\d,]+(?:\.\d+)?[KkMm]?)\s*asking'
-        ]
-        
-        page_text = soup.get_text()
-        for pattern in price_patterns:
-            match = re.search(pattern, page_text, re.I)
-            if match:
-                listing_data['price'] = self.parse_price(match.group(1))
-                break
-        
-        # Revenue
-        revenue_patterns = [
-            r'revenue[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)',
-            r'annual\s*revenue[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)',
-            r'arr[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)',
-            r'mrr[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)'
-        ]
-        
-        for pattern in revenue_patterns:
-            match = re.search(pattern, page_text, re.I)
-            if match:
-                revenue = self.parse_price(match.group(1))
-                # Convert MRR to annual
-                if 'mrr' in pattern.lower() and revenue:
-                    revenue *= 12
-                listing_data['revenue'] = revenue
-                break
-        
-        # Profit/Cash Flow
-        profit_patterns = [
-            r'profit[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)',
-            r'net\s*income[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)',
-            r'ebitda[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)',
-            r'sde[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)'
-        ]
-        
-        for pattern in profit_patterns:
-            match = re.search(pattern, page_text, re.I)
-            if match:
-                listing_data['cash_flow'] = self.parse_price(match.group(1))
-                break
-        
-        # Multiple
-        multiple_match = re.search(r'([\d.]+)x?\s*multiple', page_text, re.I)
-        if multiple_match:
-            try:
-                listing_data['multiple'] = float(multiple_match.group(1))
-            except:
-                pass
-        
-        # Industry/Type
-        industry_keywords = {
-            'saas': 'SaaS',
-            'software': 'Software',
-            'ecommerce': 'E-commerce',
-            'e-commerce': 'E-commerce',
-            'amazon': 'Amazon FBA',
-            'fba': 'Amazon FBA',
-            'marketplace': 'Marketplace',
-            'app': 'Mobile App',
-            'subscription': 'Subscription'
-        }
-        
-        for keyword, industry in industry_keywords.items():
-            if keyword in page_text.lower():
-                listing_data['industry'] = industry
-                break
-        
-        # Description
-        desc_elem = soup.find('div', class_='description') or soup.find('section', class_='about')
-        if desc_elem:
-            listing_data['description'] = desc_elem.get_text().strip()[:1000]
-        else:
-            # Try to find any substantial text block
-            for tag in ['article', 'section', 'div']:
-                elems = soup.find_all(tag)
-                for elem in elems:
-                    text = elem.get_text().strip()
-                    if len(text) > 200 and not text.startswith('<'):
-                        listing_data['description'] = text[:1000]
-                        break
-                if listing_data.get('description'):
-                    break
-        
-        return listing_data if listing_data.get('title') else None
+
+        next_data_script = soup.find('script', {'id': '__NEXT_DATA__'})
+        if not next_data_script:
+            self.logger.error(f"Could not find __NEXT_DATA__ script tag on {url}")
+            return None
+
+        try:
+            data = json.loads(next_data_script.string)
+            listing_data = data.get('props', {}).get('pageProps', {}).get('listing', {})
+            
+            if not listing_data:
+                self.logger.warning(f"No listing data found in __NEXT_DATA__ for {url}")
+                return None
+            
+            # Extract the relevant fields
+            business_data = {
+                'listing_url': url,
+                'title': listing_data.get('headline'),
+                'description': listing_data.get('about'),
+                'price': self.parse_price(str(listing_data.get('askingPrice'))),
+                'revenue': self.parse_price(str(listing_data.get('financialSummary', {}).get('revenue'))),
+                'cash_flow': self.parse_price(str(listing_data.get('financialSummary', {}).get('profit'))),
+                'established_year': listing_data.get('foundedIn'),
+                'industry': listing_data.get('category'),
+            }
+            
+            if business_data.get('price') and business_data.get('cash_flow'):
+                try:
+                    business_data['multiple'] = round(business_data['price'] / business_data['cash_flow'], 2)
+                except (TypeError, ZeroDivisionError):
+                    pass # Multiple is not critical
+
+            return business_data
+
+        except (json.JSONDecodeError, KeyError) as e:
+            self.logger.error(f"Error parsing listing __NEXT_DATA__ JSON for {url}: {e}")
+            return None

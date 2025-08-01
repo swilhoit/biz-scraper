@@ -1,16 +1,19 @@
 from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Boolean, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 from datetime import datetime
 import os
+import re
+
+from config import SITES
 
 Base = declarative_base()
 
-class Business(Base):
-    __tablename__ = 'businesses'
-    
+# A dictionary to hold the dynamically created table classes
+TABLE_CLASSES = {}
+
+class BusinessBase:
+    """A base class for business listings, containing all common columns."""
     id = Column(Integer, primary_key=True)
-    source_site = Column(String(50), nullable=False)
     listing_url = Column(String(500), unique=True, nullable=False)
     title = Column(String(500))
     price = Column(Float)
@@ -23,26 +26,43 @@ class Business(Base):
     seller_financing = Column(Boolean, default=False)
     established_year = Column(Integer)
     employees = Column(Integer)
-    
-    # Enhanced details
     ebitda = Column(Float)
     inventory_value = Column(Float)
-    ffe_value = Column(Float)  # Furniture, Fixtures & Equipment
+    ffe_value = Column(Float)
     reason_for_selling = Column(Text)
     website = Column(String(500))
     monthly_traffic = Column(String(100))
-    
-    # Amazon FBA fields
     is_amazon_fba = Column(Boolean, default=False)
     amazon_business_type = Column(String(50))
-    
-    # Timestamps
     scraped_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     enhanced_at = Column(DateTime)
-    
+
     def __repr__(self):
-        return f"<Business(title='{self.title}', source='{self.source_site}', price={self.price})>"
+        return f"<Business(title='{self.title}', price={self.price})>"
+
+def _create_dynamic_table_class(site_name):
+    """Factory function to create a new table class for a given site name."""
+    # Sanitize the site name to create a valid table name
+    # e.g., 'BizBuySell' -> 'businesses_bizbuysell'
+    sanitized_name = re.sub(r'[^a-zA-Z0-9_]', '', site_name).lower()
+    table_name = f'businesses_{sanitized_name}'
+
+    # Create a new class with the appropriate table name
+    return type(
+        f'{site_name}Business',
+        (BusinessBase, Base),
+        {'__tablename__': table_name}
+    )
+
+# Dynamically create and register a table class for each site
+for site in SITES:
+    site_name = site['name']
+    TABLE_CLASSES[site_name] = _create_dynamic_table_class(site_name)
+
+def get_table_class(site_name: str):
+    """Returns the SQLAlchemy table class for a given site name."""
+    return TABLE_CLASSES.get(site_name)
 
 def get_database_url():
     db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'businesses.db')

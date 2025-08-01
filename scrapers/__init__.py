@@ -8,7 +8,6 @@ from .empireflippers_scraper import EmpireFlippersScraper
 from .acquire_scraper import AcquireScraper
 from .feinternational_scraper import FEInternationalScraper
 from .websiteclosers_scraper import WebsiteClosersScraper
-from .detail_scraper import DetailScraper
 
 __all__ = [
     'BaseScraper', 
@@ -20,6 +19,5 @@ __all__ = [
     'EmpireFlippersScraper',
     'AcquireScraper',
     'FEInternationalScraper',
-    'WebsiteClosersScraper',
-    'DetailScraper'
+    'WebsiteClosersScraper'
 ]

@@ -1,145 +1,111 @@
 from .base_scraper import BaseScraper
 from typing import Dict, List, Optional
-import re
 import json
+from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
 
 class FlippaScraper(BaseScraper):
+    def get_page(self, url: str):
+        """Override to use Playwright for JS-heavy page"""
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            try:
+                page.goto(url, wait_until='domcontentloaded', timeout=60000)
+                page.wait_for_timeout(5000)
+                content = page.content()
+                if not content:
+                    return None
+                return BeautifulSoup(content, 'lxml')
+            except Exception as e:
+                self.logger.error(f"Error fetching {url} with Playwright: {e}")
+                return None
+            finally:
+                browser.close()
+
     def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
-        """Get listing URLs from search pages"""
+        """Get listing URLs from __NEXT_DATA__"""
         listing_urls = []
         page = 1
-        
-        while True:
-            if max_pages and page > max_pages:
-                break
-            
-            # Flippa uses different URL structure
+
+        while not max_pages or page <= max_pages:
             url = f"{self.site_config['search_url']}&page={page}"
             soup = self.get_page(url)
-            
             if not soup:
                 break
             
-            # Flippa might have listings in different formats
-            # Look for listing cards or links
-            listings = soup.find_all('a', href=re.compile(r'/\d+-[\w-]+$'))
+            json_script = soup.find('script', {'id': '__NEXT_DATA__'})
+            if not json_script:
+                self.logger.warning(f"Could not find __NEXT_DATA__ on {url}")
+                break
             
-            if not listings:
-                # Try finding by class
-                listings = soup.find_all('a', class_=re.compile('listing|card'))
-                listings = [l for l in listings if l.get('href') and '/businesses/' in l.get('href', '')]
-            
-            if not listings:
-                # Check if there's JSON data
-                scripts = soup.find_all('script', type='application/json')
-                for script in scripts:
-                    try:
-                        json_data = json.loads(script.string)
-                        # Look for listings in JSON structure
-                        if isinstance(json_data, dict) and 'listings' in json_data:
-                            for listing in json_data['listings']:
-                                if 'url' in listing:
-                                    listing_urls.append(listing['url'])
-                    except:
-                        pass
-                
-                if not listing_urls:
-                    self.logger.warning(f"No listings found on page {page}")
+            try:
+                page_data = json.loads(json_script.string)
+                edges = page_data.get('props', {}).get('pageProps', {}).get('data', {}).get('search', {}).get('listings', {}).get('edges', [])
+                if not edges:
+                    self.logger.info(f"No listings found in __NEXT_DATA__ on page {page}")
                     break
-            else:
-                for listing in listings:
-                    href = listing.get('href')
-                    if href:
-                        if href.startswith('/'):
-                            href = self.base_url + href
-                        if href not in listing_urls and '/businesses/' in href:
-                            listing_urls.append(href)
+                    
+                for edge in edges:
+                    node = edge.get('node', {})
+                    if node.get('pretty_path'):
+                        listing_urls.append(f"{self.base_url}{node['pretty_path']}")
+                
+                self.logger.info(f"Found {len(edges)} listings on page {page}")
+                
+            except (json.JSONDecodeError, KeyError) as e:
+                self.logger.error(f"Error parsing __NEXT_DATA__ on {url}: {e}")
+                break
             
-            self.logger.info(f"Found {len(listing_urls)} total listings after page {page}")
             page += 1
-            
+        
         return listing_urls
-    
+
     def scrape_listing(self, url: str) -> Optional[Dict]:
-        """Scrape a single listing"""
+        """Scrape a single listing, prioritizing JSON data"""
         soup = self.get_page(url)
         if not soup:
             return None
         
-        data = {
-            'listing_url': url,
-            'title': None,
-            'price': None,
-            'revenue': None,
-            'cash_flow': None,
-            'location': None,
-            'industry': None,
-            'description': None
-        }
+        data = {'listing_url': url}
         
-        # Flippa often uses React/JSON data
-        # Look for JSON-LD or embedded data
-        json_scripts = soup.find_all('script', type=['application/ld+json', 'application/json'])
-        for script in json_scripts:
+        # Prioritize __NEXT_DATA__ JSON blob
+        json_script = soup.find('script', {'id': '__NEXT_DATA__'})
+        if json_script:
             try:
-                json_data = json.loads(script.string)
-                if isinstance(json_data, dict):
-                    # Extract relevant fields
-                    data['title'] = json_data.get('name') or json_data.get('title')
-                    data['description'] = json_data.get('description')
-                    if 'price' in json_data:
-                        data['price'] = float(json_data['price'])
-            except:
-                pass
+                page_data = json.loads(json_script.string)
+                listing_data = page_data.get('props', {}).get('pageProps', {}).get('listing', {})
+                
+                data['title'] = listing_data.get('title')
+                data['description'] = listing_data.get('summary')
+                data['price'] = listing_data.get('price_usd')
+                
+                financials = listing_data.get('financials', {})
+                data['revenue'] = financials.get('average_monthly_revenue_usd')
+                data['cash_flow'] = financials.get('average_monthly_profit_usd')
+                
+                location = listing_data.get('location', {})
+                data['location'] = f"{location.get('city', '')}, {location.get('country', '')}"
+                
+                data['industry'] = listing_data.get('category', {}).get('name')
+                
+            except (json.JSONDecodeError, KeyError) as e:
+                self.logger.warning(f"Could not parse JSON data for {url}: {e}")
+                # If JSON fails, proceed with HTML scraping as a fallback
         
-        # Title
-        if not data['title']:
-            title_elem = soup.find('h1')
-            if title_elem:
-                data['title'] = title_elem.text.strip()
-        
-        # Look for metrics/stats
-        metric_containers = soup.find_all(['div', 'span'], class_=re.compile('metric|stat|value'))
-        for container in metric_containers:
-            text = container.text.strip().lower()
-            parent_text = container.parent.text.lower() if container.parent else ''
+        # Fallback to HTML scraping if JSON is incomplete or fails
+        if not data.get('title'):
+            title_tag = soup.select_one('h1.listing-title')
+            data['title'] = title_tag.text.strip() if title_tag else 'Title not found'
             
-            if 'price' in parent_text and '$' in text:
-                data['price'] = self.parse_price(text)
-            elif 'revenue' in parent_text and '$' in text:
-                data['revenue'] = self.parse_price(text)
-            elif ('profit' in parent_text or 'income' in parent_text) and '$' in text:
-                data['cash_flow'] = self.parse_price(text)
-        
-        # Description
-        desc_elem = soup.find('div', class_=re.compile('description|overview'))
-        if desc_elem:
-            data['description'] = desc_elem.text.strip()
-        
-        # Location and industry from tags or labels
-        tag_elements = soup.find_all(['span', 'div'], class_=re.compile('tag|label|badge'))
-        for tag in tag_elements:
-            text = tag.text.strip()
-            # Common location patterns
-            if re.match(r'^[A-Z]{2}$', text) or ',' in text:
-                data['location'] = text
-            # Industry keywords
-            elif any(word in text.lower() for word in ['ecommerce', 'saas', 'content', 'service', 'retail']):
-                data['industry'] = text
-        
-        # Fallback to meta tags
-        if not data['title']:
-            title_meta = soup.find('meta', property='og:title')
-            if title_meta:
-                data['title'] = title_meta.get('content', '').strip()
-        
-        if not data['description']:
-            desc_meta = soup.find('meta', property='og:description')
-            if desc_meta:
-                data['description'] = desc_meta.get('content', '').strip()
-        
-        # Calculate multiple if we have price and cash flow
-        if data['price'] and data['cash_flow'] and data['cash_flow'] > 0:
-            data['multiple'] = round(data['price'] / data['cash_flow'], 2)
+        if not data.get('description'):
+            desc_tag = soup.select_one('div.listing-summary')
+            data['description'] = desc_tag.text.strip() if desc_tag else 'Description not found'
+
+        # Other details as fallbacks
+        if not data.get('price'):
+            price_tag = soup.select_one('.listing-price')
+            if price_tag:
+                data['price'] = self.parse_price(price_tag.text)
         
         return data

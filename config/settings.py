@@ -38,17 +38,14 @@ SITES = [
     {
         'name': 'BizQuest',
         'base_url': 'https://www.bizquest.com',
-        'search_url': 'https://www.bizquest.com/businesses-for-sale/',
+        'search_url': 'https://www.bizquest.com/dynamic/search/businesses-for-sale/',
         'amazon_url': 'https://www.bizquest.com/amazon-business-for-sale/',
         'enabled': True
     },
     {
         'name': 'WebsiteProperties',
         'base_url': 'https://websiteproperties.com',
-        'search_urls': [
-            'https://websiteproperties.com/amazon-fba-business-for-sale/',
-            'https://websiteproperties.com/ecommerce-business-for-sale/'
-        ],
+        'search_url': 'https://websiteproperties.com/websites-for-sale/',
         'enabled': True
     },
     {
@@ -67,23 +64,20 @@ SITES = [
     },
     {
         'name': 'Acquire',
-        'base_url': 'https://acquire.com',
-        'search_urls': [
-            'https://acquire.com/amazon-fba-for-sale/',
-            'https://acquire.com/ecommerce-for-sale/'
-        ],
+        'base_url': 'https://acquisitions.com',
+        'search_url': 'https://acquisitions.com/marketplace/',
         'enabled': True
     },
     {
         'name': 'FEInternational',
         'base_url': 'https://feinternational.com',
-        'search_url': 'https://feinternational.com/buy-a-business/current-listings/',
+        'search_url': 'https://feinternational.com/buy-a-business/',
         'enabled': True
     },
     {
         'name': 'WebsiteClosers',
         'base_url': 'https://www.websiteclosers.com',
-        'search_url': 'https://www.websiteclosers.com/listings/',
+        'search_url': 'https://www.websiteclosers.com/businesses-for-sale/',
         'enabled': True
     }
 ]

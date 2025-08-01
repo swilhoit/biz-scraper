@@ -5,56 +5,48 @@ Scrapes business listings from FE International
 from typing import Dict, List, Optional
 import re
 from .base_scraper import BaseScraper
+from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
 
 class FEInternationalScraper(BaseScraper):
+    def get_page(self, url: str):
+        """Override to use Playwright for JS-heavy page"""
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            try:
+                page.goto(url, wait_until='networkidle')
+                page.wait_for_timeout(5000)  # Wait for 5 seconds
+                content = page.content()
+                if not content:
+                    return None
+                return BeautifulSoup(content, 'lxml')
+            except Exception as e:
+                self.logger.error(f"Error fetching {url} with Playwright: {e}")
+                return None
+            finally:
+                browser.close()
     def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
-        """Get listing URLs from FE International"""
+        """Get listing URLs from the main listings page."""
         listing_urls = []
+        search_url = self.site_config.get('search_url')
+        if not search_url:
+            self.logger.error("No search URL configured for FEInternational")
+            return listing_urls
+
+        soup = self.get_page(search_url)
+        if not soup:
+            return listing_urls
+
+        listing_cards = soup.select('a.card_businesses_item')
+        for card in listing_cards:
+            href = card.get('href')
+            if href:
+                full_url = href if href.startswith('http') else f"{self.site_config['base_url']}{href}"
+                if full_url not in listing_urls:
+                    listing_urls.append(full_url)
         
-        # FE International has different business categories
-        categories = [
-            'buy-a-website',
-            'buy-a-website/amazon-fba',
-            'buy-a-website/ecommerce',
-            'buy-a-website/saas',
-            'buy-a-website/content'
-        ]
-        
-        for category in categories:
-            self.logger.info(f"Scraping FE International category: {category}")
-            
-            page_url = f"{self.base_url}/{category}/"
-            soup = self.get_page(page_url)
-            
-            if not soup:
-                continue
-            
-            # Find listing cards
-            listing_cards = soup.find_all('div', class_='listing-card') or \
-                          soup.find_all('article', class_='business-listing') or \
-                          soup.find_all('div', class_='property-item')
-            
-            for card in listing_cards:
-                link = card.find('a')
-                if link and link.get('href'):
-                    href = link['href']
-                    full_url = href if href.startswith('http') else f"{self.base_url}{href}"
-                    if full_url not in listing_urls:
-                        listing_urls.append(full_url)
-            
-            # Also try to find links directly
-            links = soup.find_all('a', href=re.compile(r'/portfolio/|/listing/|/business/'))
-            for link in links:
-                href = link.get('href', '')
-                if href:
-                    full_url = href if href.startswith('http') else f"{self.base_url}{href}"
-                    if full_url not in listing_urls and '/portfolio/' in full_url:
-                        listing_urls.append(full_url)
-            
-            if max_pages and len(listing_urls) >= max_pages * 20:
-                break
-        
-        return listing_urls[:max_pages * 20] if max_pages else listing_urls
+        return listing_urls
     
     def scrape_listing(self, url: str) -> Optional[Dict]:
         """Scrape a single FE International listing"""

@@ -2,6 +2,7 @@ import logging
 import argparse
 from datetime import datetime
 import sys
+import concurrent.futures
 
 from database import init_database
 from scrapers import (
@@ -40,6 +41,22 @@ SCRAPER_CLASSES = {
     'WebsiteClosers': WebsiteClosersScraper
 }
 
+def run_scraper(site, max_listings):
+    site_name = site['name']
+    
+    if site_name not in SCRAPER_CLASSES:
+        logging.warning(f"No scraper implemented for {site_name}")
+        return
+    
+    logging.info(f"Processing {site_name}")
+    
+    try:
+        scraper_class = SCRAPER_CLASSES[site_name]
+        scraper = scraper_class(site)
+        scraper.run(max_listings=max_listings)
+    except Exception as e:
+        logging.error(f"Error running {site_name} scraper: {e}", exc_info=True)
+
 def main():
     parser = argparse.ArgumentParser(description='Business listing scraper using ScraperAPI')
     parser.add_argument(
@@ -52,6 +69,12 @@ def main():
         type=int, 
         help='Maximum number of listings to scrape per site'
     )
+    parser.add_argument(
+        '--max-workers', 
+        type=int, 
+        default=5,
+        help='Maximum number of concurrent scrapers to run'
+    )
     
     args = parser.parse_args()
     
@@ -63,22 +86,15 @@ def main():
     if args.sites:
         sites_to_scrape = [site for site in SITES if site['name'] in args.sites]
     
-    # Run scrapers
-    for site in sites_to_scrape:
-        site_name = site['name']
+    # Run scrapers in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+        futures = [executor.submit(run_scraper, site, args.max_listings) for site in sites_to_scrape]
         
-        if site_name not in SCRAPER_CLASSES:
-            logging.warning(f"No scraper implemented for {site_name}")
-            continue
-        
-        logging.info(f"Processing {site_name}")
-        
-        try:
-            scraper_class = SCRAPER_CLASSES[site_name]
-            scraper = scraper_class(site)
-            scraper.run(max_listings=args.max_listings)
-        except Exception as e:
-            logging.error(f"Error running {site_name} scraper: {e}", exc_info=True)
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                logging.error(f"A scraper generated an exception: {e}", exc_info=True)
 
 if __name__ == '__main__':
     main()

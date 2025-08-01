@@ -3,186 +3,116 @@ from typing import Dict, List, Optional
 import re
 
 class WebsitePropertiesScraper(BaseScraper):
-    """Scraper for WebsiteProperties - High-value digital businesses"""
+    """Scraper for WebsiteProperties.com, specializing in high-value digital assets."""
     
     def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
-        """Get listing URLs from search pages"""
+        """Get listing URLs from the main listings page."""
         listing_urls = []
-        
-        # WebsiteProperties has multiple category pages
-        search_urls = self.site_config.get('search_urls', [])
-        if not search_urls:
-            search_urls = [self.site_config.get('search_url')]
-        
-        for base_url in search_urls:
-            if not base_url:
-                continue
-                
+        search_urls = self.site_config.get('search_urls', [self.site_config.get('search_url')])
+
+        for search_url in filter(None, search_urls):
             page = 1
-            while True:
-                if max_pages and page > max_pages:
-                    break
-                
-                # Add pagination
-                if page == 1:
-                    url = base_url
-                else:
-                    # WebsiteProperties might use ?page=2 or /page/2/
-                    if '?' in base_url:
-                        url = f"{base_url}&page={page}"
-                    else:
-                        url = base_url.rstrip('/') + f'/page/{page}/'
-                
+            while not max_pages or page <= max_pages:
+                url = f"{search_url}/page/{page}/" if page > 1 else search_url
                 soup = self.get_page(url)
                 if not soup:
                     break
                 
-                # Look for listing cards
-                listings = soup.find_all('div', class_=['property-card', 'website-card', 'listing-card'])
-                
+                listings = soup.select('article.listing-card h3.mb-2 a')
                 if not listings:
-                    # Try finding links to individual properties
-                    listings = soup.find_all('a', href=re.compile(r'/properties/[^/]+/?$|/websites/[^/]+/?$'))
-                
-                if not listings:
-                    self.logger.info(f"No listings found on {base_url} page {page}")
-                    break
-                
-                found_on_page = 0
-                for listing in listings:
-                    if listing.name == 'div':
-                        # Find the link within the div
-                        link = listing.find('a', href=True)
-                        if link:
-                            href = link.get('href')
-                        else:
-                            continue
-                    else:
-                        href = listing.get('href')
-                    
-                    if href:
-                        if href.startswith('/'):
-                            href = self.base_url + href
-                        if href not in listing_urls:
-                            listing_urls.append(href)
-                            found_on_page += 1
-                
-                self.logger.info(f"Found {found_on_page} listings on {base_url} page {page}")
-                
-                if found_on_page == 0:
+                    self.logger.info(f"No listings found on {url}")
                     break
                     
+                for link in listings:
+                    href = link.get('href')
+                    if href and href not in listing_urls:
+                        listing_urls.append(href)
+                
+                self.logger.info(f"Found {len(listings)} listings on page {page}")
+                if not soup.select_one('a.next.page-numbers'):
+                    break
                 page += 1
-        
+            
         return listing_urls
     
     def scrape_listing(self, url: str) -> Optional[Dict]:
-        """Scrape a single listing"""
+        """Scrape a single listing page."""
         soup = self.get_page(url)
         if not soup:
             return None
         
-        data = {
-            'listing_url': url,
-            'title': None,
-            'price': None,
-            'revenue': None,
-            'cash_flow': None,
-            'location': None,
-            'industry': None,
-            'description': None,
-            'multiple': None
-        }
+        data = {'listing_url': url}
         
-        # Title
-        title_elem = soup.find('h1', class_='property-title')
-        if not title_elem:
-            title_elem = soup.find('h1')
-        if title_elem:
-            data['title'] = title_elem.text.strip()
+        title_tag = soup.select_one('h2.blog-single-title')
+        data['title'] = title_tag.text.strip() if title_tag else 'Title not found'
         
-        # Price - Look for asking price
-        price_elem = soup.find(['span', 'div'], class_=['asking-price', 'price', 'property-price'])
-        if price_elem:
-            data['price'] = self.parse_price(price_elem.text)
-        else:
-            # Search in text
-            price_match = re.search(r'asking\s*price[:\s]*\$?([\d,]+(?:\.\d+)?)\s*([KkMm])?', soup.get_text(), re.I)
-            if price_match:
-                price_value = float(price_match.group(1).replace(',', ''))
-                if price_match.group(2):
-                    if price_match.group(2).upper() == 'K':
-                        price_value *= 1000
-                    elif price_match.group(2).upper() == 'M':
-                        price_value *= 1000000
-                data['price'] = price_value
+        financials = self._extract_financials(soup)
+        data.update(financials)
+
+        desc_tag = soup.select_one('div.listing-single-content p')
+        data['description'] = desc_tag.text.strip() if desc_tag else 'Description not found'
         
-        # Financial metrics - often in a table or list
-        metrics_section = soup.find(['div', 'section'], class_=['metrics', 'financials', 'property-metrics'])
-        if metrics_section:
-            items = metrics_section.find_all(['li', 'tr', 'div'])
-            for item in items:
-                text = item.text.lower()
-                value_match = re.search(r'\$?([\d,]+(?:\.\d+)?)\s*([KkMm])?', item.text)
-                if value_match:
-                    value = float(value_match.group(1).replace(',', ''))
-                    multiplier = value_match.group(2)
-                    if multiplier:
-                        if multiplier.upper() == 'K':
-                            value *= 1000
-                        elif multiplier.upper() == 'M':
-                            value *= 1000000
-                    
-                    if 'revenue' in text or 'sales' in text:
-                        data['revenue'] = value
-                    elif 'profit' in text or 'income' in text or 'cash flow' in text:
-                        data['cash_flow'] = value
-                    elif 'multiple' in text:
-                        multiple_match = re.search(r'([\d.]+)x?', item.text)
-                        if multiple_match:
-                            data['multiple'] = float(multiple_match.group(1))
+        details = self._extract_details(soup)
+        data.update(details)
         
-        # Industry/Type
-        type_elem = soup.find(['span', 'div'], class_=['property-type', 'website-type', 'category'])
-        if type_elem:
-            data['industry'] = type_elem.text.strip()
-        else:
-            # Look in meta tags or breadcrumbs
-            breadcrumb = soup.find('nav', class_='breadcrumb')
-            if breadcrumb:
-                links = breadcrumb.find_all('a')
-                for link in links:
-                    text = link.text.lower()
-                    if any(word in text for word in ['amazon', 'fba', 'ecommerce', 'saas', 'content']):
-                        data['industry'] = link.text.strip()
-                        break
-        
-        # Description
-        desc_elem = soup.find('div', class_=['property-description', 'description', 'overview'])
-        if desc_elem:
-            data['description'] = desc_elem.text.strip()
-        
-        # Additional details
-        details_list = soup.find(['ul', 'div'], class_=['property-details', 'listing-details'])
-        if details_list:
-            details_text = details_list.text.lower()
-            
-            # Year established
-            year_match = re.search(r'established[:\s]+(\d{4})', details_text, re.I)
-            if year_match:
-                data['established_year'] = int(year_match.group(1))
-            
-            # Employees
-            emp_match = re.search(r'(\d+)\s*employees?', details_text, re.I)
-            if emp_match:
-                data['employees'] = int(emp_match.group(1))
-            
-            # Check for features
-            data['seller_financing'] = 'seller financing' in details_text
-            data['inventory_included'] = 'inventory' in details_text
-        
-        # Calculate multiple if needed
-        if data['price'] and data['cash_flow'] and not data['multiple']:
-            data['multiple'] = round(data['price'] / data['cash_flow'], 2)
-        
+        if data.get('price') and data.get('cash_flow'):
+            try:
+                data['multiple'] = round(data['price'] / data['cash_flow'], 2)
+            except (TypeError, ZeroDivisionError):
+                pass
+                
         return data
+
+    def _extract_financials(self, soup) -> Dict:
+        """Extract financial data from the page."""
+        financials = {}
+        financial_table = soup.select_one('table.listing-data-table')
+        if financial_table:
+            for row in financial_table.find_all('tr'):
+                cells = row.find_all(['th', 'td'])
+                if len(cells) == 2:
+                    label = cells[0].text.strip().lower()
+                    value = cells[1].text.strip()
+
+                    if 'gross revenue' in label:
+                        financials['revenue'] = self.parse_price(value)
+                    elif 'cash flow' in label:
+                        financials['cash_flow'] = self.parse_price(value)
+
+        price_tag = soup.select_one('h5.mt-4')
+        if price_tag:
+            price_text = price_tag.text.lower().replace('asking price:', '').strip()
+            if 'accepting offers' in price_text:
+                financials['price'] = 0
+            else:
+                financials['price'] = self.parse_price(price_text)
+            
+        return financials
+
+    def _extract_details(self, soup) -> Dict:
+        """Extract additional details like established year and employee count."""
+        details = {}
+        details_table = soup.select_one('table.listing-data-table')
+        if details_table:
+            for row in details_table.find_all('tr'):
+                cells = row.find_all(['th', 'td'])
+                if len(cells) == 2:
+                    label = cells[0].text.strip().lower()
+                    value = cells[1].text.strip()
+
+                    if 'year established' in label:
+                        try:
+                            details['established_year'] = int(re.search(r'\d{4}', value).group())
+                        except (ValueError, AttributeError):
+                            details['established_year'] = None
+                    elif 'employees' in label:
+                        try:
+                            details['employees'] = int(re.search(r'\d+', value).group())
+                        except (ValueError, AttributeError):
+                            details['employees'] = None
+                    elif 'industry' in label:
+                        details['industry'] = value
+                    elif 'location' in label:
+                        details['location'] = value
+
+        return details

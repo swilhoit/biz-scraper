@@ -3,6 +3,10 @@ from typing import Dict, List, Optional
 import re
 
 class BizQuestScraper(BaseScraper):
+    def __init__(self, site_config: Dict, max_workers: int = 10):
+        super().__init__(site_config, max_workers)
+        self.js_rendering = True # Enable JS rendering for this scraper
+
     def get_listing_urls(self, max_pages: Optional[int] = None) -> List[str]:
         """Get listing URLs from search pages"""
         listing_urls = []
@@ -12,25 +16,17 @@ class BizQuestScraper(BaseScraper):
             if max_pages and page > max_pages:
                 break
             
-            # BizQuest uses page parameter
+            # BizQuest uses a 'page' query parameter
             url = f"{self.site_config['search_url']}?page={page}"
-            soup = self.get_page(url)
+            soup = self.get_page(url, render=self.js_rendering)
             
             if not soup:
+                self.logger.info(f"No content for {url}, stopping.")
                 break
             
-            # Find listing links
-            # BizQuest uses pattern like /city-state-business-for-sale/ID.html
-            listings = soup.find_all('a', href=re.compile(r'/[^/]+-business-for-sale/\d+\.html', re.I))
-            
+            listings = soup.select('div.search-result-card-container a')
             if not listings:
-                # Try alternative selectors
-                listings = soup.find_all('h3', class_='listing-title')
-                listings = [l.find('a') for l in listings if l.find('a')]
-                listings = [l for l in listings if l]  # Remove None values
-            
-            if not listings:
-                self.logger.warning(f"No listings found on page {page}")
+                self.logger.warning(f"No listings found on page {page} of {url}")
                 break
             
             for listing in listings:
@@ -41,87 +37,70 @@ class BizQuestScraper(BaseScraper):
                     if href not in listing_urls:
                         listing_urls.append(href)
             
-            self.logger.info(f"Found {len(listings)} listings on page {page}")
+            self.logger.info(f"Found {len(listing_urls)} total listings after page {page}")
+
+            if max_pages:
+                break
+                
             page += 1
             
         return listing_urls
     
     def scrape_listing(self, url: str) -> Optional[Dict]:
         """Scrape a single listing"""
-        soup = self.get_page(url)
+        soup = self.get_page(url, render=self.js_rendering)
         if not soup:
             return None
         
-        data = {
-            'listing_url': url,
-            'title': None,
-            'price': None,
-            'revenue': None,
-            'cash_flow': None,
-            'location': None,
-            'industry': None,
-            'description': None
-        }
+        data = {'listing_url': url}
         
         # Title
-        title_elem = soup.find('h1', class_='listing-title')
-        if not title_elem:
-            title_elem = soup.find('h1')
-        if title_elem:
-            data['title'] = title_elem.text.strip()
+        title_tag = soup.select_one('h1.font-h1-new')
+        data['title'] = title_tag.text.strip() if title_tag else 'Title not found'
         
-        # Look for structured data table
-        info_table = soup.find('table', class_='listing-info')
-        if not info_table:
-            info_table = soup.find('table', id='listing-info')
+        # Description
+        desc_tag = soup.select_one('div.business-description')
+        data['description'] = desc_tag.text.strip() if desc_tag else 'Description not found'
         
-        if info_table:
-            rows = info_table.find_all('tr')
-            for row in rows:
-                cells = row.find_all(['td', 'th'])
-                if len(cells) >= 2:
+        # Financials and details from a table
+        details_table = soup.select_one('table.table-striped')
+        if details_table:
+            for row in details_table.find_all('tr'):
+                cells = row.find_all(['th', 'td'])
+                if len(cells) == 2:
                     label = cells[0].text.strip().lower()
                     value = cells[1].text.strip()
                     
                     if 'asking price' in label:
                         data['price'] = self.parse_price(value)
-                    elif 'gross revenue' in label or 'annual revenue' in label:
+                    elif 'gross revenue' in label:
                         data['revenue'] = self.parse_price(value)
                     elif 'cash flow' in label:
                         data['cash_flow'] = self.parse_price(value)
                     elif 'location' in label:
                         data['location'] = value
-                    elif 'business type' in label or 'industry' in label:
+                    elif 'industry' in label:
                         data['industry'] = value
-                    elif 'established' in label:
-                        year_match = re.search(r'(\d{4})', value)
-                        if year_match:
-                            data['established_year'] = int(year_match.group(1))
+                    elif 'year established' in label:
+                        try:
+                            data['established_year'] = int(re.search(r'\d{4}', value).group())
+                        except (ValueError, AttributeError):
+                            data['established_year'] = None
         
-        # Description
-        desc_elem = soup.find('div', class_='business-description')
-        if not desc_elem:
-            desc_elem = soup.find('div', id='description')
-        if desc_elem:
-            data['description'] = desc_elem.text.strip()
+        # Fallbacks using meta tags
+        if not data.get('title'):
+            meta_title = soup.find('meta', property='og:title')
+            if meta_title:
+                data['title'] = meta_title.get('content', '').strip()
+
+        if not data.get('description'):
+            meta_desc = soup.find('meta', {'name': 'description'})
+            if meta_desc:
+                data['description'] = meta_desc.get('content', '').strip()
         
-        # Fallback to meta tags
-        if not data['title']:
-            title_meta = soup.find('meta', property='og:title')
-            if title_meta:
-                data['title'] = title_meta.get('content', '').strip()
-        
-        if not data['description']:
-            desc_meta = soup.find('meta', {'name': 'description'})
-            if desc_meta:
-                data['description'] = desc_meta.get('content', '').strip()
-        
-        # Additional details
-        details_section = soup.find('div', class_='listing-details')
-        if details_section:
-            text = details_section.text.lower()
-            data['seller_financing'] = 'seller financing' in text
-            data['real_estate_included'] = 'real estate' in text
-            data['inventory_included'] = 'inventory' in text
+        # Additional boolean fields
+        page_text_lower = soup.get_text().lower()
+        data['seller_financing_available'] = 'seller financing' in page_text_lower
+        data['real_estate_included'] = 'real estate included' in page_text_lower
         
         return data

@@ -45,7 +45,8 @@ class EmpireFlippersScraper(BaseScraper):
     
     def scrape_listing(self, url: str) -> Optional[Dict]:
         """Scrape a single listing"""
-        soup = self.get_page(url)
+        # Use rendering for better data extraction
+        soup = self.get_page(url, render=True)
         if not soup:
             return None
         
@@ -55,43 +56,81 @@ class EmpireFlippersScraper(BaseScraper):
         title_tag = soup.select_one('h1')
         data['title'] = title_tag.text.strip() if title_tag else 'Title not found'
         
-        # Description
-        desc_tag = soup.select_one('div.listing-details p')
-        data['description'] = desc_tag.text.strip() if desc_tag else 'Description not found'
+        # Get page text for pattern matching
+        page_text = soup.get_text()
         
-        # Financials and details from a table
-        metrics_section = soup.select_one('div.metrics-wrapper')
-        if metrics_section:
-            for item in metrics_section.select('div.metric-item'):
-                label_tag = item.select_one('div.label')
-                value_tag = item.select_one('div.value')
-                if label_tag and value_tag:
-                    label = label_tag.text.strip().lower()
-                    value = value_tag.text.strip()
-                    
-                    if 'price' in label:
-                        data['price'] = self.parse_price(value)
-                    elif 'monthly net profit' in label:
-                        monthly_profit = self.parse_price(value)
-                        if monthly_profit:
-                            data['cash_flow'] = monthly_profit * 12
-                    elif 'monthly revenue' in label:
-                        monthly_revenue = self.parse_price(value)
-                        if monthly_revenue:
-                            data['revenue'] = monthly_revenue * 12
-                    elif 'monthly multiple' in label:
-                        try:
-                            data['multiple'] = float(re.search(r'(\d+)x', value).group(1))
-                        except (ValueError, TypeError, AttributeError):
-                            pass
-                    elif 'business created' in label:
-                        try:
-                            data['established_year'] = int(value)
-                        except (ValueError, TypeError):
-                            pass
+        # Extract price - look for the info-price div and get all text
+        price_elem = soup.select_one('div.info-price')
+        if price_elem:
+            price_text = price_elem.get_text(strip=True)
+            # Remove "Listing Price" label and extract number
+            price_match = re.search(r'\$([\d,]+)', price_text)
+            if price_match:
+                data['price'] = self.parse_price(price_match.group(1))
+        else:
+            # Fallback pattern
+            price_match = re.search(r'(?:Listing Price)[:\s]*\$([\d,]+)', page_text, re.I)
+            if price_match:
+                data['price'] = self.parse_price(price_match.group(1))
         
-        monetization_tag = soup.select_one('div.monetization div.value')
-        if monetization_tag:
-            data['industry'] = monetization_tag.text.strip()
+        # Extract revenue - look for the pattern "Avg. Monthly Revenue $X"
+        revenue_match = re.search(r'Avg\.\s*Monthly\s*Revenue\s*\$([\d,]+)', page_text, re.I)
+        if revenue_match:
+            monthly_revenue = self.parse_price(revenue_match.group(1))
+            if monthly_revenue:
+                data['revenue'] = monthly_revenue * 12  # Convert to annual
+        
+        # Extract profit/cash flow - look for "Avg. Monthly Profit $X"
+        profit_match = re.search(r'Avg\.\s*Monthly\s*Profit\s*\$([\d,]+)', page_text, re.I)
+        if profit_match:
+            monthly_profit = self.parse_price(profit_match.group(1))
+            if monthly_profit:
+                data['cash_flow'] = monthly_profit * 12  # Convert to annual
+        
+        # Extract multiple
+        multiple_match = re.search(r'(?:Multiple)[:\s]*([\d.]+)x?', page_text, re.I)
+        if multiple_match:
+            try:
+                data['multiple'] = float(multiple_match.group(1))
+            except ValueError:
+                pass
+        
+        # Extract business type/monetization
+        monetization_match = re.search(r'(?:Monetizations?|Business Type)[:\s]*([^\n]+)', page_text, re.I)
+        if monetization_match:
+            data['industry'] = monetization_match.group(1).strip()
+        
+        # Extract year established
+        year_match = re.search(r'(?:Business Created|Established|Founded)[:\s]*(\d{4})', page_text, re.I)
+        if year_match:
+            try:
+                data['established_year'] = int(year_match.group(1))
+            except ValueError:
+                pass
+        
+        # Description - try multiple selectors
+        desc_selectors = [
+            'div.listing-description',
+            'div.business-description',
+            'div.description',
+            'meta[name="description"]'
+        ]
+        
+        for selector in desc_selectors:
+            desc_elem = soup.select_one(selector)
+            if desc_elem:
+                if desc_elem.name == 'meta':
+                    data['description'] = desc_elem.get('content', '')
+                else:
+                    data['description'] = desc_elem.text.strip()
+                break
+        
+        if not data.get('description'):
+            # Extract from page text
+            desc_match = re.search(r'(?:Description|Overview|About)[:\s]*([^\n]{50,500})', page_text, re.I)
+            if desc_match:
+                data['description'] = desc_match.group(1).strip()
+            else:
+                data['description'] = 'See listing for details'
 
         return data

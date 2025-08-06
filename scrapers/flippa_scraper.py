@@ -1,93 +1,97 @@
 from .base_scraper import BaseScraper
 from typing import Dict, List, Optional
-import json
-from playwright.sync_api import sync_playwright
-from bs4 import BeautifulSoup
+import re
 
 class FlippaScraper(BaseScraper):
     def get_listing_urls(self, search_url: str, max_pages: Optional[int] = None) -> List[str]:
-        """Get listing URLs from __NEXT_DATA__"""
+        """Get listing URLs by parsing HTML links"""
         listing_urls = []
         page = 1
 
         while not max_pages or page <= max_pages:
-            url = f"{search_url}&page={page}"
-            soup = self.get_page(url)
+            # Flippa uses offset parameter for pagination
+            offset = (page - 1) * 50  # Assuming 50 listings per page
+            url = f"{search_url}&offset={offset}"
+            
+            # Need rendering for Flippa
+            soup = self.get_page(url, render=True)
             if not soup:
                 break
             
-            json_script = soup.find('script', {'id': '__NEXT_DATA__'})
-            if not json_script:
-                self.logger.warning(f"Could not find __NEXT_DATA__ on {url}")
-                break
+            # Find all links that match Flippa's listing URL pattern
+            all_links = soup.find_all('a', href=True)
+            new_listings = []
             
-            try:
-                page_data = json.loads(json_script.string)
-                edges = page_data.get('props', {}).get('pageProps', {}).get('data', {}).get('search', {}).get('listings', {}).get('edges', [])
-                if not edges:
-                    self.logger.info(f"No listings found in __NEXT_DATA__ on page {page}")
-                    break
-                    
-                for edge in edges:
-                    node = edge.get('node', {})
-                    if node.get('pretty_path'):
-                        listing_urls.append(f"{self.base_url}{node['pretty_path']}")
-                
-                self.logger.info(f"Found {len(edges)} listings on page {page}")
-                
-            except (json.JSONDecodeError, KeyError) as e:
-                self.logger.error(f"Error parsing __NEXT_DATA__ on {url}: {e}")
-                break
+            for link in all_links:
+                href = link['href']
+                # Flippa listing URLs are like /11052740 or https://flippa.com/11052740
+                if re.search(r'/\d{7,}$', href):
+                    if href.startswith('/'):
+                        href = f"{self.base_url}{href}"
+                    if href not in listing_urls and self.base_url in href:
+                        new_listings.append(href)
+                        listing_urls.append(href)
             
+            if not new_listings:
+                self.logger.info(f"No new listings found on page {page}")
+                break
+                
+            self.logger.info(f"Found {len(new_listings)} new listings on page {page}")
             page += 1
         
         return listing_urls
 
     def scrape_listing(self, url: str) -> Optional[Dict]:
-        """Scrape a single listing, prioritizing JSON data"""
-        soup = self.get_page(url)
+        """Scrape a single listing using HTML parsing"""
+        soup = self.get_page(url, render=True)
         if not soup:
             return None
         
         data = {'listing_url': url}
         
-        # Prioritize __NEXT_DATA__ JSON blob
-        json_script = soup.find('script', {'id': '__NEXT_DATA__'})
-        if json_script:
-            try:
-                page_data = json.loads(json_script.string)
-                listing_data = page_data.get('props', {}).get('pageProps', {}).get('listing', {})
-                
-                data['title'] = listing_data.get('title')
-                data['description'] = listing_data.get('summary')
-                data['price'] = listing_data.get('price_usd')
-                
-                financials = listing_data.get('financials', {})
-                data['revenue'] = financials.get('average_monthly_revenue_usd')
-                data['cash_flow'] = financials.get('average_monthly_profit_usd')
-                
-                location = listing_data.get('location', {})
-                data['location'] = f"{location.get('city', '')}, {location.get('country', '')}"
-                
-                data['industry'] = listing_data.get('category', {}).get('name')
-                
-            except (json.JSONDecodeError, KeyError) as e:
-                self.logger.warning(f"Could not parse JSON data for {url}: {e}")
-                # If JSON fails, proceed with HTML scraping as a fallback
+        # Title - usually in h1 or meta tags
+        title_tag = soup.find('h1') or soup.find('meta', {'property': 'og:title'})
+        if title_tag:
+            data['title'] = title_tag.text.strip() if hasattr(title_tag, 'text') else title_tag.get('content', '')
+        else:
+            data['title'] = 'Title not found'
         
-        # Fallback to HTML scraping if JSON is incomplete or fails
-        if not data.get('title'):
-            title_tag = soup.select_one('h1.listing-title')
-            data['title'] = title_tag.text.strip() if title_tag else 'Title not found'
-            
-        if not data.get('description'):
-            desc_tag = soup.select_one('div.listing-summary')
-            data['description'] = desc_tag.text.strip() if desc_tag else 'Description not found'
-
-        # Other details as fallbacks
-        if not data.get('price'):
-            price_tag = soup.select_one('.listing-price')
-            if price_tag:
-                data['price'] = self.parse_price(price_tag.text)
+        # Price - look for asking price specifically
+        price_elem = soup.select_one('div[class*="price"]')
+        if price_elem:
+            price_text = price_elem.get_text()
+            # Extract the main price (not inventory)
+            price_match = re.search(r'USD\s*\$?([\d,]+)', price_text)
+            if price_match:
+                data['price'] = self.parse_price(price_match.group(1))
+        else:
+            # Fallback pattern
+            page_text_for_price = soup.get_text()
+            price_match = re.search(r'(?:Asking Price|Buy It Now)[:\s]*\$?([\d,]+)', page_text_for_price, re.I)
+            if price_match:
+                data['price'] = self.parse_price(price_match.group(1))
+        
+        # Description
+        desc_tag = soup.find('meta', {'name': 'description'}) or soup.find('meta', {'property': 'og:description'})
+        if desc_tag:
+            data['description'] = desc_tag.get('content', '')
+        
+        # Try to find financial information
+        page_text = soup.get_text()
+        
+        # Revenue patterns
+        revenue_match = re.search(r'(?:revenue|sales)[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)', page_text, re.IGNORECASE)
+        if revenue_match:
+            data['revenue'] = self.parse_price(revenue_match.group(1))
+        
+        # Profit/Cash flow patterns  
+        profit_match = re.search(r'(?:profit|cash flow|net income)[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)', page_text, re.IGNORECASE)
+        if profit_match:
+            data['cash_flow'] = self.parse_price(profit_match.group(1))
+        
+        # Industry/Category
+        category_match = re.search(r'(?:category|industry|niche)[:\s]*([^\n,]+)', page_text, re.IGNORECASE)
+        if category_match:
+            data['industry'] = category_match.group(1).strip()
         
         return data

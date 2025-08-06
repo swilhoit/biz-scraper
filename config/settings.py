@@ -63,8 +63,8 @@ SITES = [
     },
     {
         'name': 'Acquire',
-        'base_url': 'https://acquisitions.com',
-        'search_url': 'https://acquisitions.com/marketplace/',
+        'base_url': 'https://acquire.com',
+        'search_url': 'https://acquire.com/buyers/',
         'enabled': True
     },
     {

@@ -60,9 +60,13 @@ class BizBuySellScraper(BaseScraper):
     
     def scrape_listing(self, url: str) -> Optional[Dict]:
         """Scrape a single listing"""
-        soup = self.get_page(url)
+        # Try with rendering for better data extraction on individual pages
+        soup = self.get_page(url, render=True)
         if not soup:
-            return None
+            # Fallback to non-rendered
+            soup = self.get_page(url)
+            if not soup:
+                return None
         
         data = {'listing_url': url}
         
@@ -81,37 +85,101 @@ class BizBuySellScraper(BaseScraper):
                         city = address.get('addressLocality')
                         state = address.get('addressRegion')
                         if city and state:
-                            data['location'] = f"{city}, {state}"
+                            data['location'] = f"{city}, {state}".strip()
                         elif city:
-                            data['location'] = city
+                            data['location'] = city.strip()
                         elif state:
-                            data['location'] = state
+                            data['location'] = state.strip()
             except (json.JSONDecodeError, KeyError) as e:
                 self.logger.error(f"Error parsing JSON-LD for {url}: {e}")
         
         # Fallback to HTML scraping if JSON-LD is incomplete or fails
         if not data.get('title'):
-            title_tag = soup.select_one('h1.font-h1-new')
+            title_tag = soup.select_one('h1.font-h1-new') or soup.select_one('h1')
             data['title'] = title_tag.text.strip() if title_tag else 'Title not found'
             
         if not data.get('description'):
-            desc_tag = soup.select_one('div.business-description')
+            desc_tag = soup.select_one('div.business-description') or soup.select_one('div.description')
             data['description'] = desc_tag.text.strip() if desc_tag else 'Description not found'
 
         # Financials are often in a dedicated section
+        # Look for the financials div which contains all financial data
+        financials_div = soup.select_one('div.financials')
+        if financials_div:
+            # Extract each financial metric from the p tags
+            financial_items = financials_div.select('p')
+            for item in financial_items:
+                title_elem = item.select_one('span.title')
+                if title_elem:
+                    label = title_elem.text.strip().lower()
+                    # Get the value - it's usually in the next span or the parent p
+                    value_text = item.text.replace(title_elem.text, '').strip()
+                    
+                    if 'asking price' in label and not data.get('price'):
+                        data['price'] = self.parse_price(value_text)
+                    elif 'cash flow' in label or 'sde' in label:
+                        if 'not disclosed' not in value_text.lower():
+                            data['cash_flow'] = self.parse_price(value_text)
+                    elif 'gross revenue' in label or ('revenue' in label and 'gross' in label):
+                        if 'not disclosed' not in value_text.lower():
+                            data['revenue'] = self.parse_price(value_text)
+                    elif 'ebitda' in label:
+                        if 'not disclosed' not in value_text.lower():
+                            data['ebitda'] = self.parse_price(value_text)
+        
+        # Fallback if financials div not found
         if not data.get('price'):
-            price_tag = soup.select_one('div.asking-price')
+            price_tag = soup.select_one('span.price.asking') or soup.select_one('div.asking-price')
             if price_tag:
                 data['price'] = self.parse_price(price_tag.text)
         
-        financials = soup.select('div.financials-desktop__wrapper--item')
-        for item in financials:
-            label = item.select_one('p:first-child').text.lower() if item.select_one('p:first-child') else ''
-            value = item.select_one('p:last-child').text if item.select_one('p:last-child') else ''
+        # Pattern matching as additional fallback
+        if not data.get('revenue') or not data.get('cash_flow'):
+            page_text = soup.get_text()
             
-            if 'cash flow' in label:
-                data['cash_flow'] = self.parse_price(value)
-            elif 'gross revenue' in label:
-                data['revenue'] = self.parse_price(value)
+            # Note: BizBuySell often requires login to see full financial details
+            # We can only get what's publicly available
+            import re
+            
+            # Look for revenue if not found
+            if not data.get('revenue'):
+                revenue_match = re.search(r'Gross Revenue[:\s]*\$?([\d,]+)', page_text, re.I)
+                if revenue_match:
+                    data['revenue'] = self.parse_price(revenue_match.group(1))
+            
+            # Look for cash flow if not found
+            if not data.get('cash_flow'):
+                cf_match = re.search(r'Cash Flow.*?(?:SDE)?[:\s]*\$?([\d,]+)', page_text, re.I)
+                if cf_match:
+                    data['cash_flow'] = self.parse_price(cf_match.group(1))
+        
+        # Try to extract industry/business type
+        if not data.get('industry'):
+            # Look for category or type
+            category_elem = soup.select_one('div.category, span.category, div.business-type')
+            if category_elem:
+                data['industry'] = category_elem.text.strip()
+        
+        # Extract established year
+        if not data.get('established_year'):
+            # Look in the financials area first
+            if financials_div:
+                established_text = financials_div.text
+                year_match = re.search(r'Established[:\s]*(\d{4})', established_text, re.I)
+                if year_match:
+                    try:
+                        data['established_year'] = int(year_match.group(1))
+                    except ValueError:
+                        pass
+            
+            # Fallback to full page search
+            if not data.get('established_year'):
+                page_text = soup.get_text()
+                year_match = re.search(r'Established[:\s]*(\d{4})', page_text, re.I)
+                if year_match:
+                    try:
+                        data['established_year'] = int(year_match.group(1))
+                    except ValueError:
+                        pass
 
         return data

@@ -32,14 +32,20 @@ logs/
 Thumbs.db
 
 # Test files
-test_*.py
-debug_*.py
+tests/debug/
+archived/
 *.html
-test_files/
 
 # Temporary files
 temp/
 temp_*.py
+
+# Development files
+check_*.py
+run_*.py
+get_*.py
+quick_*.py
+debug_*.py
 
 # Backup files
 *.bak

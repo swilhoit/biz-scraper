@@ -65,13 +65,13 @@ SITES = [
         'name': 'Acquire',
         'base_url': 'https://acquire.com',
         'search_url': 'https://acquire.com/buyers/',
-        'enabled': True
+        'enabled': False  # Disabled - requires playwright
     },
     {
         'name': 'FEInternational',
         'base_url': 'https://feinternational.com',
         'search_url': 'https://feinternational.com/buy-a-business/',
-        'enabled': True
+        'enabled': False  # Disabled - requires playwright
     },
     {
         'name': 'WebsiteClosers',

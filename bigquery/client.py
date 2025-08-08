@@ -94,6 +94,8 @@ class BigQueryHandler:
 
     def insert_rows(self, site_name: str, rows: list):
         """Inserts rows into the specified site's table."""
+        from datetime import datetime
+        
         if not rows:
             return
 
@@ -103,9 +105,20 @@ class BigQueryHandler:
         # Ensure the table exists before trying to insert
         self.create_table_if_not_exists(site_name)
         
-        errors = self.client.insert_rows_json(table_id, rows)
+        # Convert datetime objects to ISO format strings in all rows
+        processed_rows = []
+        for row in rows:
+            processed_row = {}
+            for key, value in row.items():
+                if isinstance(value, datetime):
+                    processed_row[key] = value.isoformat()
+                else:
+                    processed_row[key] = value
+            processed_rows.append(processed_row)
+        
+        errors = self.client.insert_rows_json(table_id, processed_rows)
         if not errors:
-            self.logger.info(f"Successfully inserted {len(rows)} rows into {table_id}.")
+            self.logger.info(f"Successfully inserted {len(processed_rows)} rows into {table_id}.")
         else:
             self.logger.error(f"Encountered errors while inserting rows into {table_id}: {errors}")
     
@@ -176,28 +189,43 @@ class BigQueryHandler:
     
     def log_scraping_run(self, log_data: dict):
         """Log a scraping run to the scraping_logs table."""
+        import json
+        from datetime import datetime
+        
         table_name = "scraping_logs"
         table_id = f"{self.dataset_id}.{table_name}"
         
         # Ensure the logs table exists
         self.create_logs_table_if_not_exists()
         
+        # Convert datetime objects to ISO format strings
+        processed_data = {}
+        for key, value in log_data.items():
+            if isinstance(value, datetime):
+                processed_data[key] = value.isoformat()
+            else:
+                processed_data[key] = value
+        
         # Insert the log record
-        errors = self.client.insert_rows_json(table_id, [log_data])
+        errors = self.client.insert_rows_json(table_id, [processed_data])
         if not errors:
-            self.logger.info(f"Successfully logged scraping run {log_data.get('run_id')} to {table_id}.")
+            self.logger.info(f"Successfully logged scraping run {processed_data.get('run_id')} to {table_id}.")
         else:
             self.logger.error(f"Error logging scraping run: {errors}")
     
     def update_scraping_log(self, run_id: str, updates: dict):
         """Update an existing scraping log entry."""
+        from datetime import datetime
+        
         table_name = "scraping_logs"
         table_id = f"{self.dataset_id}.{table_name}"
         
         # Build the update query
         set_clauses = []
         for key, value in updates.items():
-            if isinstance(value, str):
+            if isinstance(value, datetime):
+                set_clauses.append(f"{key} = '{value.isoformat()}'")
+            elif isinstance(value, str):
                 set_clauses.append(f"{key} = '{value}'")
             elif value is None:
                 set_clauses.append(f"{key} = NULL")

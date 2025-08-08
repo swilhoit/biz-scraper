@@ -13,8 +13,8 @@ from scrapers import (
     QuietLightScraper,
     WebsitePropertiesScraper,
     EmpireFlippersScraper,
-    AcquireScraper,
-    FEInternationalScraper,
+    # AcquireScraper,  # Disabled - requires playwright
+    # FEInternationalScraper,  # Disabled - requires playwright
     WebsiteClosersScraper
 )
 from config import SITES
@@ -37,8 +37,8 @@ SCRAPER_CLASSES = {
     'QuietLight': QuietLightScraper,
     'WebsiteProperties': WebsitePropertiesScraper,
     'EmpireFlippers': EmpireFlippersScraper,
-    'Acquire': AcquireScraper,
-    'FEInternational': FEInternationalScraper,
+    # 'Acquire': AcquireScraper,  # Disabled - requires playwright
+    # 'FEInternational': FEInternationalScraper,  # Disabled - requires playwright
     'WebsiteClosers': WebsiteClosersScraper
 }
 

@@ -5,8 +5,8 @@ from .flippa_scraper import FlippaScraper
 from .quietlight_scraper import QuietLightScraper
 from .websiteproperties_scraper import WebsitePropertiesScraper
 from .empireflippers_scraper import EmpireFlippersScraper
-from .acquire_scraper import AcquireScraper
-from .feinternational_scraper import FEInternationalScraper
+# from .acquire_scraper import AcquireScraper  # Requires playwright, disabled for now
+# from .feinternational_scraper import FEInternationalScraper  # Requires playwright, disabled for now
 from .websiteclosers_scraper import WebsiteClosersScraper
 
 __all__ = [
@@ -17,7 +17,7 @@ __all__ = [
     'QuietLightScraper',
     'WebsitePropertiesScraper',
     'EmpireFlippersScraper',
-    'AcquireScraper',
-    'FEInternationalScraper',
+    # 'AcquireScraper',  # Requires playwright, disabled for now
+    # 'FEInternationalScraper',  # Requires playwright, disabled for now
     'WebsiteClosersScraper'
 ]

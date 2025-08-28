@@ -6,48 +6,49 @@ import json
 class BizQuestScraper(BaseScraper):
     def __init__(self, site_config: Dict, max_workers: int = 10):
         super().__init__(site_config, max_workers)
-        self.js_rendering = True # Enable JS rendering for this scraper
+        self.js_rendering = False  # Disable JS rendering - not needed
 
     def get_listing_urls(self, search_url: str, max_pages: Optional[int] = None) -> List[str]:
-        """Get listing URLs and extract data from search pages"""
+        """Get listing URLs from search pages"""
         listing_urls = []
         page = 1
         
-        # Initialize cache for search data
-        if not hasattr(self, '_search_data_cache'):
-            self._search_data_cache = {}
+        # BizQuest uses /businesses-for-sale/page-X/ format
+        base_url = "https://www.bizquest.com/businesses-for-sale"
         
         while True:
             if max_pages and page > max_pages:
                 break
             
-            # BizQuest uses a 'page' query parameter
-            url = f"{search_url}?page={page}"
+            # Construct page URL
+            if page == 1:
+                url = f"{base_url}/"
+            else:
+                url = f"{base_url}/page-{page}/"
+                
             soup = self.get_page(url, render=self.js_rendering)
             
             if not soup:
                 self.logger.info(f"No content for {url}, stopping.")
                 break
             
-            # Find all links that go to business listings
-            listings = soup.select('a[href*="/business-for-sale/"]')
+            # Find all business listing links
+            listings = soup.select('a[href*="/business-for-sale/"][href$="/"]')
             
-            # Filter to only unique business listing URLs and extract data
+            # Filter to unique listing URLs
             new_listings = []
             for listing in listings:
                 href = listing.get('href')
-                if href and '/business-for-sale/' in href and href.endswith('/'):
+                if href and '/business-for-sale/' in href and href != '/business-for-sale/':
                     if href.startswith('/'):
-                        full_url = self.base_url + href
+                        full_url = "https://www.bizquest.com" + href
                     else:
                         full_url = href
                         
+                    # Skip if already seen
                     if full_url not in listing_urls:
                         new_listings.append(full_url)
                         listing_urls.append(full_url)
-                        
-                        # Extract data from the search result
-                        self._extract_search_data(listing, full_url)
             
             if not new_listings:
                 self.logger.warning(f"No new listings found on page {page}")
@@ -58,106 +59,251 @@ class BizQuestScraper(BaseScraper):
             
         return listing_urls
     
-    def _extract_search_data(self, link_element, url: str):
-        """Extract listing data from search result container"""
-        # Find the specific listing container
-        parent = link_element
-        # Go up until we find a container that likely contains just this listing
-        for _ in range(5):  # Max 5 levels up
-            parent = parent.parent
-            if not parent:
-                return
-            # Check if this looks like a listing container
-            if parent.name in ['div', 'article', 'section']:
-                # Check if it contains only one listing link
-                links = parent.select('a[href*="/business-for-sale/"]')
-                if len(links) == 1:
+    def scrape_listing(self, url: str) -> Optional[Dict]:
+        """Scrape a single listing with comprehensive data extraction"""
+        data = {'listing_url': url}
+        
+        # Get the page (no JS rendering needed for BizQuest)
+        soup = self.get_page(url, render=False)
+        if not soup:
+            self.logger.error(f"Failed to load page: {url}")
+            return None
+        
+        # Extract all text for parsing
+        page_text = soup.get_text(separator=' ', strip=True)
+        
+        # Title extraction
+        title_elem = soup.find('h1') or soup.find('h2', class_='business-title')
+        if title_elem:
+            data['title'] = title_elem.text.strip()
+        else:
+            # Extract from URL path
+            match = re.search(r'/business-for-sale/([^/]+)/', url)
+            if match:
+                data['title'] = match.group(1).replace('-', ' ').title()
+        
+        # Price extraction - look for various formats
+        price_patterns = [
+            r'(?:asking price|price)[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?(?:illion)?)',
+            r'\$?([\d,]+(?:\.\d+)?[KkMm]?(?:illion)?)\s*(?:asking|sale|price)',
+            r'for sale[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?(?:illion)?)',
+        ]
+        
+        # First check structured data
+        price_elem = soup.find('span', class_='price') or soup.find('div', class_='price')
+        if price_elem:
+            price_text = price_elem.text.strip()
+            data['asking_price'] = self.parse_price(price_text)
+            data['asking_price_raw'] = price_text
+        else:
+            # Fall back to regex patterns
+            for pattern in price_patterns:
+                match = re.search(pattern, page_text, re.IGNORECASE)
+                if match:
+                    data['asking_price'] = self.parse_price(match.group(1))
+                    data['asking_price_raw'] = match.group(0)
                     break
         
-        if not parent:
-            return
-            
-        container_text = parent.get_text(separator=' ', strip=True)
+        # Cash Flow / Profit extraction (BizQuest often shows Cash Flow prominently)
+        cash_flow_patterns = [
+            r'cash flow[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?(?:illion)?)',
+            r'(?:annual cash flow|yearly cash flow)[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?(?:illion)?)',
+            r'(?:net income|net profit)[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?(?:illion)?)',
+            r'(?:ebitda|sde)[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?(?:illion)?)',
+        ]
         
-        data = {}
+        for pattern in cash_flow_patterns:
+            match = re.search(pattern, page_text, re.IGNORECASE)
+            if match:
+                value = self.parse_price(match.group(1))
+                data['cash_flow'] = value
+                data['cash_flow_raw'] = match.group(0)
+                # Also store as profit for compatibility
+                data['profit'] = value
+                data['profit_raw'] = match.group(0)
+                data['profit_numeric'] = value
+                break
         
-        # Extract title from URL path
-        url_parts = url.split('/')
-        if len(url_parts) > 4:
-            data['title'] = url_parts[4].replace('-', ' ').title()
+        # Revenue/Sales extraction
+        revenue_patterns = [
+            r'(?:gross revenue|gross sales|annual revenue|yearly revenue|revenue)[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?(?:illion)?)',
+            r'(?:sales|annual sales|yearly sales)[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?(?:illion)?)',
+            r'\$?([\d,]+(?:\.\d+)?[KkMm]?(?:illion)?)\s*(?:in revenue|in sales)',
+        ]
         
-        # Extract price - look for the first price in this container
-        prices = re.findall(r'\$([\d,]+(?:\.\d+)?[KkMm]?)', container_text)
-        if prices:
-            # Usually the first price is the asking price
-            data['price'] = self.parse_price(prices[0])
+        for pattern in revenue_patterns:
+            match = re.search(pattern, page_text, re.IGNORECASE)
+            if match:
+                value = self.parse_price(match.group(1))
+                data['revenue'] = value
+                data['revenue_raw'] = match.group(0)
+                data['revenue_numeric'] = value
+                break
         
-        # Extract cash flow
-        cash_flow_match = re.search(r'(?:cash flow|profit|net income)[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)', container_text, re.I)
-        if cash_flow_match:
-            data['cash_flow'] = self.parse_price(cash_flow_match.group(1))
+        # If we found cash flow but no revenue, estimate revenue
+        if 'cash_flow' in data and 'revenue' not in data:
+            # Look for margin info
+            margin_match = re.search(r'(\d+(?:\.\d+)?)\s*%\s*(?:margin|profit margin)', page_text, re.IGNORECASE)
+            if margin_match:
+                margin = float(margin_match.group(1)) / 100
+                if margin > 0:
+                    data['revenue'] = data['cash_flow'] / margin
+                    data['revenue_raw'] = f"Estimated from {margin*100}% margin"
         
-        # Extract location - look for city, state pattern
+        # Location extraction
         location_patterns = [
-            r'([A-Za-z\s]+\s*,\s*[A-Z]{2})(?=\s|$)',  # City, ST
-            r'([A-Za-z\s]+ County\s*,\s*[A-Z]{2})',     # County, ST
+            r'(?:location|located in|based in)[:\s]*([^,]+,\s*[A-Z]{2})',
+            r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*[A-Z]{2})',  # City, ST
         ]
         
         for pattern in location_patterns:
-            location_match = re.search(pattern, container_text)
-            if location_match:
-                data['location'] = location_match.group(1).strip()
+            match = re.search(pattern, page_text)
+            if match:
+                location = match.group(1).strip()
+                data['location'] = location
+                data['location_raw'] = location
+                # Parse city and state
+                parts = location.split(',')
+                if len(parts) >= 2:
+                    data['city'] = parts[0].strip()
+                    data['state'] = parts[-1].strip()
                 break
         
-        # Extract business type/industry from container
-        industry_keywords = ['E-commerce', 'Amazon', 'FBA', 'Wholesaler', 'Retailer', 'SaaS', 'Content']
-        for keyword in industry_keywords:
-            if keyword.lower() in container_text.lower():
-                data['industry'] = keyword
+        # Business type/category extraction
+        category_keywords = {
+            'Restaurant': ['restaurant', 'cafe', 'coffee', 'food', 'dining', 'bar', 'grill', 'pizza', 'bakery'],
+            'Retail': ['retail', 'store', 'shop', 'boutique', 'mart', 'market'],
+            'Service': ['service', 'consulting', 'agency', 'cleaning', 'repair', 'maintenance'],
+            'Manufacturing': ['manufacturing', 'factory', 'production', 'industrial'],
+            'E-commerce': ['e-commerce', 'ecommerce', 'online', 'internet', 'amazon', 'fba', 'shopify'],
+            'Franchise': ['franchise', 'franchising'],
+            'Healthcare': ['medical', 'health', 'clinic', 'dental', 'wellness', 'pharmacy'],
+            'Technology': ['technology', 'tech', 'software', 'saas', 'it', 'digital', 'app'],
+            'Automotive': ['auto', 'car', 'vehicle', 'mechanic', 'dealership'],
+            'Real Estate': ['real estate', 'property', 'realty', 'rental'],
+        }
+        
+        page_text_lower = page_text.lower()
+        for category, keywords in category_keywords.items():
+            for keyword in keywords:
+                if keyword in page_text_lower:
+                    data['category'] = category
+                    data['business_type'] = category
+                    break
+            if 'category' in data:
                 break
         
-        # Extract description - clean it up
-        desc_text = container_text
-        # Remove common UI elements
-        desc_text = re.sub(r'Save|Contact|\d+\s*/\s*\d+', '', desc_text).strip()
-        data['description'] = desc_text[:500]
+        # Default category if not found
+        if 'category' not in data:
+            data['category'] = 'General'
+            data['business_type'] = 'Business'
         
-        # Store in cache
-        self._search_data_cache[url] = data
-    
-    def scrape_listing(self, url: str) -> Optional[Dict]:
-        """Scrape a single listing - extract from search results cache if possible"""
-        data = {'listing_url': url}
+        # Year established extraction
+        year_patterns = [
+            r'(?:established|founded|since)[:\s]*(\d{4})',
+            r'(\d{4})\s*(?:established|founded)',
+            r'(?:in business since|operating since)[:\s]*(\d{4})',
+        ]
         
-        # First check if we have data from search results
-        if hasattr(self, '_search_data_cache') and url in self._search_data_cache:
-            cached_data = self._search_data_cache[url]
-            data.update(cached_data)
-            self.logger.info(f"Using cached data for {url}")
-            return data
+        for pattern in year_patterns:
+            match = re.search(pattern, page_text, re.IGNORECASE)
+            if match:
+                year = int(match.group(1))
+                if 1900 <= year <= 2025:
+                    data['established_year'] = year
+                    break
         
-        # If not in cache, try to scrape the page (though it might fail)
-        soup = self.get_page(url, render=self.js_rendering)
-        if not soup:
-            # Return basic data with URL
-            data['title'] = 'Unable to fetch details'
-            data['description'] = 'Please visit the listing URL for full details'
-            return data
-        
-        # Try to extract what we can
-        # Title from meta or h1
-        title_tag = soup.find('h1') or soup.find('meta', property='og:title')
-        if title_tag:
-            data['title'] = title_tag.text.strip() if hasattr(title_tag, 'text') else title_tag.get('content', '')
+        # Description extraction
+        desc_elem = soup.find('meta', {'name': 'description'})
+        if desc_elem:
+            data['description'] = desc_elem.get('content', '').strip()
         else:
-            # Extract from URL
-            url_parts = url.split('/')
-            if len(url_parts) > 4:
-                data['title'] = url_parts[4].replace('-', ' ').title()
+            # Try to get from first paragraph or business description section
+            desc_section = soup.find('div', class_='description') or soup.find('section', class_='business-description')
+            if desc_section:
+                data['description'] = desc_section.text.strip()[:500]
+            else:
+                # Use cleaned snippet from page text
+                data['description'] = re.sub(r'\s+', ' ', page_text[:500])
         
-        # Description from meta
-        meta_desc = soup.find('meta', {'name': 'description'})
-        if meta_desc:
-            data['description'] = meta_desc.get('content', '').strip()
+        # Additional valuable fields
+        
+        # Employees
+        employee_match = re.search(r'(\d+)\s*(?:employees|staff|workers)', page_text, re.IGNORECASE)
+        if employee_match:
+            data['employees'] = int(employee_match.group(1))
+        
+        # Inventory value
+        inventory_match = re.search(r'inventory[:\s]*\$?([\d,]+(?:\.\d+)?[KkMm]?)', page_text, re.IGNORECASE)
+        if inventory_match:
+            data['inventory_value'] = self.parse_price(inventory_match.group(1))
+        
+        # Real estate status
+        if re.search(r'real estate included|includes real estate|property included', page_text, re.IGNORECASE):
+            data['real_estate_included'] = True
+        elif re.search(r'lease|rent|no real estate', page_text, re.IGNORECASE):
+            data['real_estate_included'] = False
+        
+        # Reason for selling
+        reason_match = re.search(r'(?:reason for selling|selling because)[:\s]*([^.]+)', page_text, re.IGNORECASE)
+        if reason_match:
+            data['reason_for_selling'] = reason_match.group(1).strip()[:200]
+        
+        # Financing available
+        if re.search(r'financing available|seller financing|owner financing|sba', page_text, re.IGNORECASE):
+            data['financing_available'] = True
+        
+        # Training provided
+        if re.search(r'training provided|training included|will train', page_text, re.IGNORECASE):
+            data['training_provided'] = True
+        
+        # Ensure numeric fields are set for compatibility
+        if 'asking_price' in data:
+            data['asking_price_numeric'] = data['asking_price']
+        if 'revenue' in data:
+            data['revenue_numeric'] = data['revenue']
+        if 'profit' in data:
+            data['profit_numeric'] = data['profit']
+        if 'cash_flow' in data:
+            data['cash_flow_numeric'] = data['cash_flow']
         
         return data
+    
+    def parse_price(self, price_str: str) -> float:
+        """Parse price string to float with improved handling"""
+        if not price_str:
+            return 0.0
+        
+        # Convert to string if needed
+        price_str = str(price_str)
+        
+        # Remove dollar signs, commas, and extra spaces
+        price_str = price_str.replace('$', '').replace(',', '').strip()
+        
+        # Handle abbreviations
+        multipliers = {
+            'k': 1000,
+            'thousand': 1000,
+            'm': 1000000,
+            'mil': 1000000,
+            'million': 1000000,
+            'mm': 1000000,
+            'b': 1000000000,
+            'billion': 1000000000
+        }
+        
+        # Check for multiplier
+        for suffix, multiplier in multipliers.items():
+            if price_str.lower().endswith(suffix):
+                # Remove suffix and multiply
+                num_part = price_str[:-len(suffix)].strip()
+                try:
+                    return float(num_part) * multiplier
+                except ValueError:
+                    pass
+        
+        # Try to parse as regular number
+        try:
+            return float(price_str)
+        except ValueError:
+            return 0.0
